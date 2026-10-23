@@ -1,91 +1,96 @@
 /** @type {import('tailwindcss').Config} */
-// Trung Nguyên Legend brand tokens, taken from the "Safety Monitor" design. Usage rules: docs/BRAND.md
+// Viettel IDC brand tokens, taken from viettelidc.com.vn (variable.css, styles.css, custom.css). Usage rules: docs/BRAND.md
 module.exports = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // Espresso surfaces: sidebar, dark cards, primary buttons.
+        // Viettel red (--red: #ee0033): primary buttons, active navigation, links, CRITICAL.
+        brand: {
+          50: "#FFF0F3",
+          100: "#FFDDE4",
+          200: "#FFB8C6",
+          300: "#FF7A93",
+          400: "#FF3D63",
+          500: "#EE0033",
+          600: "#D1002D",
+          700: "#AD0025",
+          800: "#87001D",
+        },
+        // Charcoal surfaces: dark cards, toasts, overlays on camera frames.
         ink: {
-          DEFAULT: "#17110C",
-          soft: "#2C2016",
-          raised: "#221810",
-          edge: "#33261B",
-          field: "#3A2C20",
+          DEFAULT: "#23262A",
+          raised: "#2C3034",
+          edge: "#3B3F45",
+          field: "#4A4F56",
         },
-        paper: "#F3EDE3",
-        surface: "#FFFDF9",
-        cream: "#FBF7F0",
-        sand: "#F8F2E8",
-        well: "#EAE1D2",
+        paper: "#F4F5F7",
+        surface: "#FFFFFF",
+        subtle: "#F8F9FA",
+        muted: "#F2F3F5",
+        well: "#E9EBEE",
         line: {
-          DEFAULT: "#E6DCCB",
-          soft: "#F0E8DB",
-          muted: "#EEE4D4",
-          strong: "#DCCFB9",
+          DEFAULT: "#E1E1E1",
+          soft: "#EEEEEE",
+          muted: "#E8E8E8",
+          strong: "#D2D4D7",
         },
-        // Text on light surfaces.
-        bark: {
-          300: "#A3927F",
-          400: "#8A7866",
-          500: "#7A6A5A",
-          600: "#5E4E3F",
-          800: "#2A1E15",
-          900: "#1E150E",
+        // Text on light surfaces (900 --title, 800 --content, 700 --new-black).
+        graphite: {
+          300: "#A5A9AE",
+          400: "#7D8288",
+          500: "#63686E",
+          600: "#4F5459",
+          700: "#44494D",
+          800: "#383838",
+          900: "#252525",
         },
-        // Text on espresso surfaces.
-        husk: {
-          50: "#FBF4E8",
-          100: "#EFE4D2",
-          300: "#BCA98F",
-          500: "#8C7A64",
-          700: "#6E5D4A",
+        // Text on charcoal surfaces.
+        fog: {
+          50: "#F7F7F8",
+          100: "#E4E6E8",
+          300: "#B3B7BC",
+          500: "#8D9298",
         },
-        gold: {
-          50: "#FBF4E6",
-          100: "#F7ECD6",
-          200: "#F3DEB0",
-          300: "#E3BE74",
-          400: "#D9B56A",
-          500: "#C99A4A",
-          600: "#B4873A",
-          700: "#8A5A0E",
-          800: "#5E3D08",
+        success: {
+          50: "#E8F7EE",
+          200: "#BDE5CC",
+          600: "#1E9E57",
+          700: "#157A42",
+          900: "#0E5530",
         },
-        crimson: {
-          50: "#FFF8F4",
-          100: "#F4DDD8",
-          300: "#E8A497",
-          500: "#D2402F",
-          600: "#9E2A1F",
-          700: "#8E2219",
-          800: "#86221A",
+        // Site orange (#f78f24): HIGH severity, middling AI confidence.
+        warn: {
+          50: "#FFF3E6",
+          500: "#F78F24",
+          700: "#9A4A00",
         },
-        leaf: {
-          50: "#E6F0E5",
-          200: "#C6DCC5",
-          600: "#3E8A52",
-          700: "#2F6E40",
-          900: "#24502F",
+        // Site blue (--primary: #4199e4): NEW incidents, zones that moved with the camera.
+        info: {
+          50: "#EAF3FC",
+          500: "#4199E4",
+          700: "#1D5FA6",
         },
-        toggle: "#D6CABA",
+        toggle: "#C9CCD0",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "Segoe UI", "Helvetica Neue", "Arial", "sans-serif"],
-        display: ["var(--font-display)", "Trajan Pro", "Times New Roman", "serif"],
+        display: ["var(--font-display)", "var(--font-sans)", "Segoe UI", "Arial", "sans-serif"],
         mono: ["var(--font-mono)", "Consolas", "monospace"],
       },
       backgroundImage: {
-        rays: "repeating-conic-gradient(rgba(201,154,74,.2) 0 4deg, transparent 4deg 18deg)",
-        "rays-soft": "repeating-conic-gradient(rgba(201,154,74,.14) 0 3deg, transparent 3deg 15deg)",
-        stripes: "repeating-linear-gradient(135deg, #221810 0 10px, #2B1F15 10px 20px)",
-        "gold-bar": "linear-gradient(180deg, #D9B56A, #B4873A)",
+        // Red light from the top-right corner of a charcoal card, as on the site's dark banners.
+        glow: "radial-gradient(120% 90% at 100% 0%, rgba(238,0,51,.30), transparent 60%)",
+        "brand-sweep": "linear-gradient(135deg, #FF1A4B 0%, #EE0033 45%, #AD0025 100%)",
+        dots: "radial-gradient(rgba(255,255,255,.22) 1px, transparent 1.4px)",
+        stripes: "repeating-linear-gradient(135deg, #2C3034 0 10px, #33373C 10px 20px)",
+        bars: "linear-gradient(180deg, #A9AEB4, #7D8288)",
       },
       keyframes: {
         "live-pulse": {
-          "0%": { boxShadow: "0 0 0 0 rgba(62,138,82,.55)" },
-          "70%": { boxShadow: "0 0 0 8px rgba(62,138,82,0)" },
-          "100%": { boxShadow: "0 0 0 0 rgba(62,138,82,0)" },
+          "0%": { boxShadow: "0 0 0 0 rgba(30,158,87,.55)" },
+          "70%": { boxShadow: "0 0 0 8px rgba(30,158,87,0)" },
+          "100%": { boxShadow: "0 0 0 0 rgba(30,158,87,0)" },
         },
         "demo-pulse": {
           "0%": { boxShadow: "0 0 0 0 rgba(217,119,6,.55)" },

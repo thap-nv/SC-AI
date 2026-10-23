@@ -56,8 +56,8 @@ export default function CamerasPage() {
 
   return (
     <Shell title="Cameras" actions={admin ? <PrimaryButton onClick={() => setOpen(true)}>+ Add camera</PrimaryButton> : null}>
-      <p className="text-sm text-bark-600">
-        Each camera is an RTSP stream or an uploaded MP4 used like a camera. <strong className="text-bark-800">{processing}</strong> of {cameras.length} processing.
+      <p className="text-sm text-graphite-600">
+        Each camera is an RTSP stream or an uploaded MP4 used like a camera. <strong className="text-graphite-800">{processing}</strong> of {cameras.length} processing.
       </p>
       {error ? <ErrorText>{error}</ErrorText> : null}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-[18px]">
@@ -65,7 +65,7 @@ export default function CamerasPage() {
           const live = LIVE.has(camera.status);
           const ruleCount = rules.filter((rule) => rule.camera_id === camera.id).length;
           return (
-            <article key={camera.id} className="panel relative flex flex-col overflow-hidden transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(42,30,21,.10)]">
+            <article key={camera.id} className="panel relative flex flex-col overflow-hidden transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(37,37,37,.10)]">
               <div className="relative aspect-[2/1] overflow-hidden bg-stripes">
                 <Snapshot
                   path={`/api/cameras/${camera.id}/snapshot?raw=true`}
@@ -74,18 +74,18 @@ export default function CamerasPage() {
                   refreshMs={live ? 10000 : undefined}
                   className={`absolute inset-0 h-full w-full ${camera.enabled ? "" : "brightness-[.72] grayscale-[.6]"}`}
                 />
-                <span className={`absolute left-3 top-3 flex items-center gap-1.5 rounded bg-ink/80 px-2 py-1 font-mono text-[10.5px] tracking-[0.06em] ${live ? "text-[#F0B3A6]" : "text-husk-300"}`}>
+                <span className={`absolute left-3 top-3 flex items-center gap-1.5 rounded bg-ink/80 px-2 py-1 font-mono text-[10.5px] tracking-[0.06em] ${live ? "text-brand-200" : "text-fog-300"}`}>
                   {live ? <RecDot /> : null}
                   {live ? "LIVE" : "OFF"}
                 </span>
-                <span className="absolute right-3 top-3 rounded bg-ink/80 px-2 py-1 font-mono text-[10.5px] text-[#D9C7A6]">{camera.code}</span>
-                <span className={`absolute inset-x-0 bottom-0 h-[3px] ${live ? "bg-leaf-600" : "bg-[#4A3A2C]"}`} />
+                <span className="absolute right-3 top-3 rounded bg-ink/80 px-2 py-1 font-mono text-[10.5px] text-fog-100">{camera.code}</span>
+                <span className={`absolute inset-x-0 bottom-0 h-[3px] ${live ? "bg-success-600" : "bg-ink-edge"}`} />
               </div>
               <div className="flex items-center gap-3.5 px-[18px] pb-2.5 pt-4">
                 <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
                   {/* The stretched link makes the whole card open the camera; the switch sits above it. */}
-                  <Link href={`/cameras/${camera.id}`} className="truncate text-base font-semibold text-bark-800 after:absolute after:inset-0 hover:text-gold-700">{camera.name}</Link>
-                  <span className="text-[13px] text-bark-500">{camera.area}</span>
+                  <Link href={`/cameras/${camera.id}`} className="truncate text-base font-semibold text-graphite-800 after:absolute after:inset-0 hover:text-brand-700">{camera.name}</Link>
+                  <span className="text-[13px] text-graphite-500">{camera.area}</span>
                 </div>
                 <div className="relative z-[1]">
                   {admin ? <Switch checked={camera.enabled} onChange={(next) => setEnabled(camera, next)} label={camera.enabled ? `Disable ${camera.name}` : `Enable ${camera.name}`} /> : <StatusPill status={camera.status} />}
@@ -93,7 +93,7 @@ export default function CamerasPage() {
               </div>
               <div className="flex flex-wrap gap-2 px-[18px] pb-4">
                 {[camera.stream_type, `${camera.ai_fps} FPS AI`, `${ruleCount} ${ruleCount === 1 ? "rule" : "rules"}`, `${alerts[camera.id] || 0} alerts today`].map((chip) => (
-                  <span key={chip} className="rounded bg-paper px-2 py-[3px] font-mono text-[11px] text-bark-600">{chip}</span>
+                  <span key={chip} className="rounded bg-paper px-2 py-[3px] font-mono text-[11px] text-graphite-600">{chip}</span>
                 ))}
               </div>
             </article>
@@ -102,8 +102,8 @@ export default function CamerasPage() {
       </div>
       {open ? (
         <form onSubmit={create} className="fixed inset-0 z-20 grid place-items-center bg-ink/40 p-4">
-          <div className="w-full max-w-lg rounded-xl border-t-2 border-gold-500 bg-surface p-6 shadow-xl">
-            <h2 className="font-display text-lg font-semibold">Add camera</h2>
+          <div className="w-full max-w-lg rounded-xl border-t-[3px] border-brand-500 bg-surface p-6 shadow-xl">
+            <h2 className="font-display text-lg font-bold text-graphite-900">Add camera</h2>
             <div className="mt-4 grid gap-3">
               <label className="text-sm font-medium">Code<input className="mt-1" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required /></label>
               <label className="text-sm font-medium">Name<input className="mt-1" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>

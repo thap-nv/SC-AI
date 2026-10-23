@@ -64,13 +64,13 @@ export default function ZonesPage() {
     const fontFamily = getComputedStyle(canvas).fontFamily;
     if (image) ctx.drawImage(image, 0, 0, width, height);
     else {
-      ctx.fillStyle = "#221810";
+      ctx.fillStyle = "#2C3034";
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#8C7A64";
+      ctx.fillStyle = "#8D9298";
       ctx.font = `14px ${fontFamily}`;
       ctx.fillText("Waiting for a camera frame", 24, 32);
     }
-    const draw = (poly: number[][], color: string, close: boolean, options: { dashed?: boolean; label?: string; labelText?: string } = {}) => {
+    const draw = (poly: number[][], color: string, close: boolean, options: { dashed?: boolean; label?: string } = {}) => {
       if (poly.length === 0) return;
       ctx.beginPath();
       poly.forEach(([x, y], index) => {
@@ -104,14 +104,14 @@ export default function ZonesPage() {
         const top = Math.max(0, y * height - 24);
         ctx.fillStyle = color;
         ctx.fillRect(x * width, top, textWidth + 10, 20);
-        ctx.fillStyle = options.labelText || "#ffffff";
+        ctx.fillStyle = "#ffffff";
         ctx.fillText(options.label, x * width + 5, top + 14);
       }
     };
-    // Saved zones wear brand gold (ink label for contrast); the shape being drawn is blue so it never reads as saved.
+    // Saved zones wear Viettel red (white label); the shape being drawn is blue so it never reads as saved.
     zones.forEach((zone) => {
-      if (zone.id === editing?.id) draw(zone.polygon, "#A3927F", true, { dashed: true, label: `${zone.name} (current)` });
-      else draw(zone.polygon, "#E3BE74", true, { label: zone.name, labelText: "#1E150E" });
+      if (zone.id === editing?.id) draw(zone.polygon, "#7D8288", true, { dashed: true, label: `${zone.name} (current)` });
+      else draw(zone.polygon, "#EE0033", true, { label: zone.name });
     });
     draw(points, "#2b7fc4", points.length > 2);
   }, [image, zones, points, editing]);
@@ -174,7 +174,7 @@ export default function ZonesPage() {
 
   return (
     <Shell title="Zone configuration" back={{ href: `/cameras/${params.id}`, label: "Camera" }}>
-      <p className="-mt-2 text-sm text-bark-500">Points are saved as fractions of the frame, from 0 to 1.</p>
+      <p className="-mt-2 text-sm text-graphite-500">Points are saved as fractions of the frame, from 0 to 1.</p>
       {error ? <ErrorText>{error}</ErrorText> : null}
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
         <canvas ref={canvasRef} onClick={addPoint} className="w-full cursor-crosshair panel" />
@@ -189,13 +189,13 @@ export default function ZonesPage() {
                 </select>
               </label>
               {zoneType === "GREEN_COFFEE_LINE" || zoneType === "ROASTED_COFFEE_LINE" || zoneType === "COFFEE_COUNT_LINE" ? (
-                <p className="text-xs text-bark-500">Draw the belt. Each bean is counted once when it crosses the horizontal middle, moving down the frame. Green and roasted belts also grade defects. The count belt only totals quantity.</p>
+                <p className="text-xs text-graphite-500">Draw the belt. Each bean is counted once when it crosses the horizontal middle, moving down the frame. Green and roasted belts also grade defects. The count belt only totals quantity.</p>
               ) : null}
-              <div className="text-xs text-bark-500">
+              <div className="text-xs text-graphite-500">
                 {points.length} points. Click the corners in order around the area. Any number of corners works.
                 {editing ? " The dashed outline is the current shape. Its rules and past incidents stay linked." : ""}
               </div>
-              <div className="text-xs text-bark-500">
+              <div className="text-xs text-graphite-500">
                 {referenceId
                   ? "Zones saved here remember this frame. If the camera moves a little they follow it; if the view changes too much they pause."
                   : "No camera frame to remember yet. Zones saved now stay where they are drawn even if the camera moves."}
@@ -209,16 +209,16 @@ export default function ZonesPage() {
                 {editing ? <GhostButton type="button" onClick={stopRedraw}>Cancel</GhostButton> : null}
               </div>
             </div>
-          ) : <p className="text-sm text-bark-600">Viewers can see zones. An admin draws them.</p>}
+          ) : <p className="text-sm text-graphite-600">Viewers can see zones. An admin draws them.</p>}
           <div className="panel p-5">
             <h2 className="text-sm font-semibold">Saved zones</h2>
             <ul className="mt-2 space-y-2 text-sm">
               {zones.map((zone) => (
-                <li key={zone.id} className={`flex items-center justify-between gap-2 ${zone.id === editing?.id ? "rounded bg-gold-50 px-2 py-1 ring-1 ring-inset ring-gold-200" : ""}`}>
+                <li key={zone.id} className={`flex items-center justify-between gap-2 ${zone.id === editing?.id ? "rounded bg-brand-50 px-2 py-1 ring-1 ring-inset ring-brand-200" : ""}`}>
                   <span>
                     {zone.name}
-                    <span className="block text-xs text-bark-500">{ZONE_LABELS[zone.zone_type] || zone.zone_type} · {zone.polygon.length} corners</span>
-                    <span className="block text-xs text-bark-500">{zone.reference_key ? `Follows camera moves · View ${viewNumbers.get(zone.reference_key)}` : "Not linked to a camera view"}</span>
+                    <span className="block text-xs text-graphite-500">{ZONE_LABELS[zone.zone_type] || zone.zone_type} · {zone.polygon.length} corners</span>
+                    <span className="block text-xs text-graphite-500">{zone.reference_key ? `Follows camera moves · View ${viewNumbers.get(zone.reference_key)}` : "Not linked to a camera view"}</span>
                   </span>
                   {admin ? (
                     <span className="flex flex-wrap justify-end gap-x-3">
@@ -226,12 +226,12 @@ export default function ZonesPage() {
                       {referenceId ? (
                         <button className="link p-0 text-xs" title="Use when the zone already matches this frame. Zones locked together form one view." onClick={() => lockToView(zone)}>Lock to this view</button>
                       ) : null}
-                      <button className="p-0 text-xs font-semibold text-crimson-700 hover:text-crimson-800" onClick={() => api(`/api/zones/${zone.id}`, { method: "DELETE" }).then(() => { if (zone.id === editing?.id) stopRedraw(); loadZones(); })}>Delete</button>
+                      <button className="p-0 text-xs font-semibold text-brand-700 hover:text-brand-800" onClick={() => api(`/api/zones/${zone.id}`, { method: "DELETE" }).then(() => { if (zone.id === editing?.id) stopRedraw(); loadZones(); })}>Delete</button>
                     </span>
                   ) : null}
                 </li>
               ))}
-              {zones.length === 0 ? <li className="text-bark-500">No zones yet.</li> : null}
+              {zones.length === 0 ? <li className="text-graphite-500">No zones yet.</li> : null}
             </ul>
           </div>
         </div>

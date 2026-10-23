@@ -4,23 +4,23 @@
 
 @layer base {
   body {
-    @apply bg-paper text-bark-800 antialiased;
+    @apply bg-paper text-graphite-800 antialiased;
   }
 
   ::selection {
-    @apply bg-gold-200 text-bark-900;
+    @apply bg-brand-100 text-graphite-900;
   }
 
   :focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-gold-500;
+    @apply outline outline-2 outline-offset-2 outline-brand-500;
   }
 
   input, select, textarea {
-    @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm text-bark-800 outline-none transition-colors placeholder:text-bark-300 focus:border-gold-500 focus:ring-2 focus:ring-gold-100;
+    @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm text-graphite-800 outline-none transition-colors placeholder:text-graphite-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
   }
 
   input[type="range"] {
-    @apply border-0 bg-transparent px-0 py-0 accent-gold-600 focus:ring-0;
+    @apply border-0 bg-transparent px-0 py-0 accent-brand-500 focus:ring-0;
   }
 
   button {
@@ -34,20 +34,20 @@
   }
 
   .panel-dark {
-    @apply relative overflow-hidden rounded-xl bg-ink text-husk-100;
+    @apply relative overflow-hidden rounded-xl bg-ink bg-glow text-fog-100;
   }
 
   .link {
-    @apply font-semibold text-gold-700 hover:text-gold-800;
+    @apply font-semibold text-brand-600 hover:text-brand-700;
   }
 
   .eyebrow {
-    @apply font-display text-[11px] font-semibold uppercase tracking-[0.2em];
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em];
   }
 
-  /* Inputs on espresso cards (New rule form). */
+  /* Inputs on charcoal cards (New rule form). */
   .field-dark {
-    @apply border-ink-field bg-ink-raised text-husk-50 focus:border-gold-500 focus:ring-gold-500/20;
+    @apply border-ink-field bg-ink-raised text-fog-50 focus:border-brand-500 focus:ring-brand-500/25;
   }
 }
 
@@ -56,7 +56,7 @@ table {
 }
 
 th {
-  @apply border-b border-line-soft bg-sand px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-bark-400;
+  @apply border-b border-line-soft bg-muted px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-graphite-500;
 }
 
 td {
@@ -64,7 +64,7 @@ td {
 }
 
 tbody tr {
-  @apply transition-colors hover:bg-gold-50;
+  @apply transition-colors hover:bg-subtle;
 }
 
 tbody tr:last-child td {

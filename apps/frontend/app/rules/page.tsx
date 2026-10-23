@@ -77,7 +77,7 @@ export default function RulesPage() {
     }
   }
 
-  const label = "flex flex-col gap-1.5 text-[12.5px] text-husk-300";
+  const label = "flex flex-col gap-1.5 text-[12.5px] text-fog-300";
 
   return (
     <Shell title="Rules">
@@ -85,8 +85,7 @@ export default function RulesPage() {
       <div className="flex flex-wrap items-start gap-5">
         {admin ? (
           <form onSubmit={create} className="panel-dark flex max-w-full flex-[1_1_280px] flex-col gap-3.5 p-[22px]">
-            <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-rays-soft" aria-hidden="true" />
-            <h2 className="relative font-display text-lg font-semibold text-gold-200">New rule</h2>
+            <h2 className="relative font-display text-lg font-bold text-white">New rule</h2>
             <label className={label}>Template
               <select className="field-dark" value={template} onChange={(e) => { setTemplate(e.target.value); setName(e.target.value); const next = TEMPLATES.find((item) => item.label === e.target.value); if (next) setSeconds(next.min_duration_s); }}>
                 {TEMPLATES.map((item) => <option key={item.label}>{item.label}</option>)}
@@ -102,13 +101,13 @@ export default function RulesPage() {
               <label className={label}>Min duration (s)<input className="field-dark" type="number" min={0} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} /></label>
               <label className={label}>Cooldown (s)<input className="field-dark" type="number" min={0} value={cooldown} onChange={(e) => setCooldown(Number(e.target.value))} /></label>
             </div>
-            <p className="text-xs leading-normal text-husk-500">
+            <p className="text-xs leading-normal text-fog-500">
               {CONDITION_LABELS[chosen.condition_type]}.{" "}
               {chosen.condition_type === "DEFECT_RATE"
                 ? "Opens when the recent share of defective beans stays above 15%."
                 : "Unknown hairnet or uniform results do not raise an alert."}
             </p>
-            <button type="submit" className="bg-gold-bar py-3 font-bold text-bark-900 hover:brightness-[1.07]">Save rule</button>
+            <button type="submit" className="bg-brand-500 py-3 font-bold text-white hover:bg-brand-600">Save rule</button>
           </form>
         ) : null}
         <div className="panel min-w-0 flex-[999_1_620px] overflow-auto">
@@ -119,15 +118,15 @@ export default function RulesPage() {
                 <tr key={rule.id} className={rule.enabled ? "" : "opacity-45"}>
                   <td>
                     <div className="text-sm font-semibold">{rule.name}</div>
-                    <div className="text-xs text-bark-400">{rule.camera_name}</div>
+                    <div className="text-xs text-graphite-400">{rule.camera_name}</div>
                   </td>
                   <td className="text-[13.5px]">{rule.zone_name}</td>
                   <td className="text-[13.5px]">{eventLabel(rule.event_type)}</td>
-                  <td className="whitespace-nowrap font-mono text-xs text-bark-600">{rule.min_duration_ms / 1000}s · cd {rule.cooldown_ms / 1000}s</td>
+                  <td className="whitespace-nowrap font-mono text-xs text-graphite-600">{rule.min_duration_ms / 1000}s · cd {rule.cooldown_ms / 1000}s</td>
                   <td><SeverityTag severity={rule.severity} /></td>
                   <td>
                     <div className="flex justify-end">
-                      {admin ? <Switch size="sm" checked={rule.enabled} onChange={(next) => setEnabled(rule, next)} label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`} /> : <span className="text-xs text-bark-500">{rule.enabled ? "On" : "Off"}</span>}
+                      {admin ? <Switch size="sm" checked={rule.enabled} onChange={(next) => setEnabled(rule, next)} label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`} /> : <span className="text-xs text-graphite-500">{rule.enabled ? "On" : "Off"}</span>}
                     </div>
                   </td>
                 </tr>

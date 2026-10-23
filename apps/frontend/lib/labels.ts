@@ -106,8 +106,3 @@ export function formatDate(value: Date) {
 export function shortId(id: string) {
   return `INC-${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
 }
-
-// Cinzel has no Vietnamese tone marks (ơ, ư, ạ…ỹ). Text that needs them falls back to the UI face instead of mixing fonts.
-export function displayFont(text: string) {
-  return /[̀-ͯƠ-ưẠ-ỹ]/.test(text.normalize("NFC")) ? "font-sans" : "font-display";
-}

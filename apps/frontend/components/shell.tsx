@@ -4,17 +4,50 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/providers";
-import { Emblem, LiveDot, Rule } from "@/components/ui";
+import { LiveDot, Logo, Rule } from "@/components/ui";
 import { API_URL, api, clearSession, getToken, getUser, Incident, User } from "@/lib/api";
 import { emitIncident, useIncidentEvents } from "@/lib/live";
-import { displayFont, eventLabel, formatDate, formatTime } from "@/lib/labels";
+import { eventLabel, formatDate, formatTime } from "@/lib/labels";
+
+// 24 × 24 line icons, stroked with currentColor.
+const ICONS: Record<string, React.ReactNode> = {
+  overview: (
+    <>
+      <rect x="3" y="3" width="7" height="9" rx="1.5" />
+      <rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" />
+      <rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </>
+  ),
+  cameras: (
+    <>
+      <rect x="2.5" y="6" width="13" height="12" rx="2" />
+      <path d="M15.5 10.5 21.5 7v10l-6-3.5" />
+    </>
+  ),
+  rules: (
+    <>
+      <path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h9M17 18h3" />
+      <circle cx="15" cy="6" r="2" />
+      <circle cx="9" cy="12" r="2" />
+      <circle cx="15" cy="18" r="2" />
+    </>
+  ),
+  incidents: (
+    <>
+      <path d="M10.3 4.2 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9.5v4M12 17h.01" />
+    </>
+  ),
+  evaluation: <path d="M3 20.5h18M6.5 17V11M11.5 17V5.5M16.5 17v-8" />,
+};
 
 const LINKS = [
-  { href: "/", label: "Overview", num: "I" },
-  { href: "/cameras", label: "Cameras", num: "II" },
-  { href: "/rules", label: "Rules", num: "III" },
-  { href: "/incidents", label: "Incidents", num: "IV" },
-  { href: "/evaluation", label: "Evaluation", num: "V" },
+  { href: "/", label: "Overview", icon: "overview" },
+  { href: "/cameras", label: "Cameras", icon: "cameras" },
+  { href: "/rules", label: "Rules", icon: "rules" },
+  { href: "/incidents", label: "Incidents", icon: "incidents" },
+  { href: "/evaluation", label: "Evaluation", icon: "evaluation" },
 ];
 
 function initials(name: string) {
@@ -91,8 +124,8 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
   if (!user) {
     return (
       <div className="grid min-h-screen place-items-center">
-        <div className="flex flex-col items-center gap-3 text-sm text-bark-500">
-          <Emblem className="h-12 w-12 text-gold-500 motion-safe:animate-pulse" />
+        <div className="flex flex-col items-center gap-3 text-sm text-graphite-500">
+          <Logo className="h-10 w-auto text-graphite-900 motion-safe:animate-pulse" />
           Loading…
         </div>
       </div>
@@ -107,16 +140,14 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
 
   return (
     <div className="min-h-screen md:flex">
-      <aside className="relative flex flex-col overflow-hidden bg-ink text-husk-100 md:sticky md:top-0 md:h-screen md:w-[264px] md:flex-none">
-        <div className="flex items-center gap-3.5 px-[22px] pb-[22px] pt-[26px]">
-          <Emblem className="h-[46px] w-[46px] shrink-0 text-gold-500" />
-          <div className="flex min-w-0 flex-col gap-[3px]">
-            <div className="whitespace-nowrap font-display text-[10.5px] tracking-[0.18em] text-gold-500">TRUNG NGUYÊN LEGEND</div>
-            <div className="text-[17px] font-semibold tracking-[-0.01em] text-husk-50">Safety Monitor</div>
-          </div>
+      <aside className="relative flex flex-col overflow-hidden border-b border-line bg-surface md:sticky md:top-0 md:h-screen md:w-[256px] md:flex-none md:border-b-0 md:border-r">
+        <div className="flex items-center gap-3.5 px-[22px] pb-5 pt-6">
+          <Logo className="h-[34px] w-auto shrink-0 text-graphite-900" />
+          <span className="h-8 w-px bg-line" aria-hidden="true" />
+          <div className="font-display text-[14.5px] font-semibold leading-[1.15] text-graphite-900">Safety<br />Monitor</div>
         </div>
-        <div className="mx-[22px] h-px bg-gradient-to-r from-gold-500/60 to-transparent" />
-        <div className="hidden px-[22px] pb-2 pt-[22px] font-display text-[10px] tracking-[0.22em] text-husk-500 md:block">COFFEE FACTORY</div>
+        <div className="mx-[22px] h-px bg-line-soft" />
+        <div className="eyebrow hidden px-[22px] pb-2 pt-5 text-graphite-400 md:block">Coffee factory</div>
         <nav className="flex gap-0.5 overflow-auto px-3 py-3 md:flex-col md:py-0">
           {LINKS.map((link) => {
             const active = link.href === "/" ? path === "/" : path.startsWith(link.href);
@@ -126,35 +157,36 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
                 key={link.href}
                 href={link.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-3.5 whitespace-nowrap rounded-lg px-3 py-[11px] transition-colors hover:bg-gold-500/10 hover:text-husk-50 ${active ? "bg-gold-500/15 text-gold-200" : "text-husk-300"}`}
+                className={`relative flex items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2.5 transition-colors ${active ? "bg-brand-50 text-brand-600" : "text-graphite-600 hover:bg-muted hover:text-graphite-900"}`}
               >
-                <span className={`hidden w-6 font-display text-xs font-semibold md:inline ${active ? "text-gold-300" : "text-husk-700"}`}>{link.num}</span>
-                <span className="flex-1 text-[14.5px] font-medium">{link.label}</span>
-                {badge ? <span className="min-w-6 rounded-full bg-crimson-600 px-[7px] py-0.5 text-center text-[11px] font-bold text-[#FFF3EE]" aria-label={`${badge} new`}>{badge > 99 ? "99+" : badge}</span> : null}
+                {active ? <span className="absolute inset-y-2 left-0 hidden w-[3px] rounded-full bg-brand-500 md:block" aria-hidden="true" /> : null}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
+                  {ICONS[link.icon]}
+                </svg>
+                <span className={`flex-1 text-[14.5px] ${active ? "font-semibold" : "font-medium"}`}>{link.label}</span>
+                {badge ? <span className="min-w-6 rounded-full bg-brand-500 px-[7px] py-0.5 text-center text-[11px] font-bold text-white" aria-label={`${badge} new`}>{badge > 99 ? "99+" : badge}</span> : null}
               </Link>
             );
           })}
         </nav>
-        <div className="relative hidden flex-1 md:block" aria-hidden="true">
-          <Emblem className="pointer-events-none absolute -bottom-36 -left-28 h-[400px] w-[400px] text-gold-500/[0.16]" />
-        </div>
-        <div className="relative flex items-center gap-3 border-t border-gold-500/15 bg-ink px-[22px] py-4">
-          <div className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full border border-gold-500 text-xs font-semibold text-gold-300">{initials(user.full_name)}</div>
+        <div className="hidden flex-1 md:block" />
+        <div className="flex items-center gap-3 border-t border-line px-[22px] py-4">
+          <div className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-brand-50 text-xs font-bold text-brand-600">{initials(user.full_name)}</div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-semibold text-husk-50" title={user.full_name}>{user.full_name}</div>
-            <div className="text-xs capitalize text-husk-500">{user.role.replace("_", " ").toLowerCase()}</div>
+            <div className="truncate text-[13.5px] font-semibold text-graphite-900" title={user.full_name}>{user.full_name}</div>
+            <div className="text-xs capitalize text-graphite-500">{user.role.replace("_", " ").toLowerCase()}</div>
           </div>
-          <button onClick={signOut} className="whitespace-nowrap rounded-md border border-gold-500/35 bg-transparent px-2.5 py-1.5 text-xs text-gold-400 hover:bg-gold-500/10">
+          <button onClick={signOut} className="whitespace-nowrap rounded-md border border-line-strong bg-transparent px-2.5 py-1.5 text-xs text-graphite-700 hover:border-brand-500 hover:text-brand-600">
             Sign out
           </button>
         </div>
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-[5] flex flex-wrap items-center gap-4 border-b border-line bg-[#FBF7F0]/90 px-4 py-3 backdrop-blur md:px-9">
-          <div className={`flex items-center gap-2.5 rounded-full border py-1.5 pl-2.5 pr-3 ${demo ? "border-amber-200 bg-amber-50" : "border-leaf-200 bg-leaf-50"}`}>
+        <header className="sticky top-0 z-[5] flex flex-wrap items-center gap-4 border-b border-line bg-surface/90 px-4 py-3 backdrop-blur md:px-9">
+          <div className={`flex items-center gap-2.5 rounded-full border py-1.5 pl-2.5 pr-3 ${demo ? "border-amber-200 bg-amber-50" : "border-success-200 bg-success-50"}`}>
             <LiveDot demo={demo} />
-            <span className={`text-[13px] ${demo ? "text-amber-950" : "text-leaf-900"}`}>
+            <span className={`text-[13px] ${demo ? "text-amber-950" : "text-success-900"}`}>
               <strong className="font-bold">AI Mode: {mode}</strong>
               {demo ? " — demonstration labels, not a trained factory model" : " — running the configured detector"}
               {connected ? "" : " · worker still connecting"}
@@ -162,10 +194,10 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
           </div>
           <div className="flex-1" />
           {now ? (
-            <div className="flex items-center gap-2 font-mono text-[12.5px] text-bark-500" aria-label="Factory time">
+            <div className="flex items-center gap-2 font-mono text-[12.5px] text-graphite-500" aria-label="Factory time">
               <span>{formatDate(now)}</span>
-              <span className="text-gold-500">◆</span>
-              <span className="font-medium text-bark-800">{formatTime(now)}</span>
+              <span className="h-1 w-1 rounded-full bg-brand-500" aria-hidden="true" />
+              <span className="font-medium text-graphite-800">{formatTime(now)}</span>
               <span>ICT</span>
             </div>
           ) : null}
@@ -178,13 +210,13 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
                 {back ? (
                   <>
                     <Link href={back.href} className="link text-[12.5px]">← {back.label}</Link>
-                    <span className="text-[#D9C7A6]">/</span>
+                    <span className="text-graphite-300">/</span>
                   </>
                 ) : null}
-                <div className="font-display text-[11.5px] tracking-[0.24em] text-[#9A7333]">COFFEE FACTORY · SAFETY</div>
+                <div className="eyebrow text-brand-600">Coffee factory · Safety</div>
               </div>
-              <h1 className={`m-0 text-[34px] font-semibold leading-tight tracking-[0.02em] text-bark-900 ${displayFont(title)}`}>{title}</h1>
-              <p className="text-[14.5px] text-bark-500">AI raises an alert. A person decides what it means.</p>
+              <h1 className="m-0 font-display text-[32px] font-bold leading-tight tracking-[-0.01em] text-graphite-900">{title}</h1>
+              <p className="text-[14.5px] text-graphite-500">AI raises an alert. A person decides what it means.</p>
             </div>
             {actions ? <div className="flex flex-wrap gap-2.5">{actions}</div> : null}
           </div>

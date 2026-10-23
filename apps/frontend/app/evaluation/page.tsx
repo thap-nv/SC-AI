@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Shell from "@/components/shell";
-import { Diamond, ErrorText, Kpi, OutlineButton, SEVERITY } from "@/components/ui";
+import { ErrorText, Kpi, Marker, OutlineButton, SEVERITY } from "@/components/ui";
 import { API_URL, api, getToken } from "@/lib/api";
 import { eventLabel, percent } from "@/lib/labels";
 
@@ -50,7 +50,7 @@ export default function EvaluationPage() {
       <div className="grid gap-5 xl:grid-cols-2">
         <section className="panel flex flex-col gap-4 px-6 py-[22px]">
           <h2 className="text-base font-semibold">By violation</h2>
-          {byType.length === 0 ? <p className="text-sm text-bark-500">No incidents yet.</p> : null}
+          {byType.length === 0 ? <p className="text-sm text-graphite-500">No incidents yet.</p> : null}
           <div className="flex flex-col gap-3">
             {byType.map(([type, count]) => (
               <div key={type} className="grid grid-cols-[minmax(0,180px)_minmax(0,1fr)_34px] items-center gap-3">
@@ -66,28 +66,28 @@ export default function EvaluationPage() {
 
         <div className="flex flex-col gap-5">
           <section className="panel-dark flex flex-col gap-3.5 px-6 py-[22px]">
-            <h2 className="text-base font-semibold text-husk-50">Frame pipeline</h2>
-            <div className="flex h-3.5 overflow-hidden rounded bg-[#2B1F15]" role="img" aria-label={`${Math.round(processedShare * 100)}% of frames processed`}>
-              <span className="bg-gradient-to-r from-gold-600 to-gold-400" style={{ width: `${processedShare * 100}%` }} />
-              {frames ? <span className="flex-1 bg-[repeating-linear-gradient(135deg,#5A2A22_0_5px,#3E1E18_5px_10px)]" /> : null}
+            <h2 className="text-base font-semibold text-fog-50">Frame pipeline</h2>
+            <div className="flex h-3.5 overflow-hidden rounded bg-ink-raised" role="img" aria-label={`${Math.round(processedShare * 100)}% of frames processed`}>
+              <span className="bg-gradient-to-r from-fog-300 to-white" style={{ width: `${processedShare * 100}%` }} />
+              {frames ? <span className="flex-1 bg-[repeating-linear-gradient(135deg,#D1002D_0_5px,#87001D_5px_10px)]" /> : null}
             </div>
             <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                ["Processed", String(report?.frames_processed ?? "—"), "text-gold-300", ""],
-                ["Dropped", String(report?.dropped_frames ?? "—"), "text-crimson-300", ""],
-                ["Inference", report?.average_inference_ms === null || report?.average_inference_ms === undefined ? "—" : String(Math.round(report.average_inference_ms)), "text-husk-50", report?.average_inference_ms === null || report?.average_inference_ms === undefined ? "" : "ms"],
-                ["Cameras reporting", String(report?.cameras_reporting ?? "—"), "text-husk-50", ""],
+                ["Processed", String(report?.frames_processed ?? "—"), "text-white", ""],
+                ["Dropped", String(report?.dropped_frames ?? "—"), "text-brand-300", ""],
+                ["Inference", report?.average_inference_ms === null || report?.average_inference_ms === undefined ? "—" : String(Math.round(report.average_inference_ms)), "text-fog-50", report?.average_inference_ms === null || report?.average_inference_ms === undefined ? "" : "ms"],
+                ["Cameras reporting", String(report?.cameras_reporting ?? "—"), "text-fog-50", ""],
               ].map(([label, value, color, unit]) => (
                 <div key={label} className="flex flex-col gap-0.5">
-                  <dt className="text-[11.5px] text-husk-500">{label}</dt>
+                  <dt className="text-[11.5px] text-fog-500">{label}</dt>
                   <dd className={`font-display text-2xl font-semibold ${color}`}>
                     {value}
-                    {unit ? <span className="ml-1 font-sans text-sm font-medium text-husk-300">{unit}</span> : null}
+                    {unit ? <span className="ml-1 font-sans text-sm font-medium text-fog-300">{unit}</span> : null}
                   </dd>
                 </div>
               ))}
             </dl>
-            <p className="text-[12.5px] leading-normal text-husk-500">
+            <p className="text-[12.5px] leading-normal text-fog-500">
               {!frames
                 ? "No camera has reported frames yet."
                 : processedShare < 0.5
@@ -98,8 +98,8 @@ export default function EvaluationPage() {
           <section className="panel flex flex-col gap-2.5 px-6 py-5">
             <h2 className="text-sm font-semibold">How to read these numbers</h2>
             {(report?.notes || []).map((note) => (
-              <p key={note} className="flex items-baseline gap-2.5 text-[13px] leading-normal text-bark-600">
-                <Diamond className="relative -top-px bg-gold-500" />
+              <p key={note} className="flex items-baseline gap-2.5 text-[13px] leading-normal text-graphite-600">
+                <Marker className="relative -top-px bg-brand-500" />
                 {note}
               </p>
             ))}

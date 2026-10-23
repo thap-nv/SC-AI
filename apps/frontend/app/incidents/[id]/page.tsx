@@ -52,19 +52,19 @@ export default function IncidentDetailPage() {
               {incident.snapshot_uri ? (
                 <Snapshot path={`/api/incidents/${params.id}/snapshot`} alt="Incident snapshot" placeholder="evidence snapshot" className="absolute inset-0 h-full w-full" />
               ) : (
-                <div className="grid h-full place-items-center font-mono text-xs text-husk-500">No snapshot was stored for this incident.</div>
+                <div className="grid h-full place-items-center font-mono text-xs text-fog-500">No snapshot was stored for this incident.</div>
               )}
             </div>
-            <p className="px-4 py-3 text-xs text-bark-500">
+            <p className="px-4 py-3 text-xs text-graphite-500">
               {incident.clip_uri ? `Clip: ${incident.clip_uri}` : "Video clips can be added later without changing this record. This incident stores a snapshot."}
             </p>
           </section>
           <section className="panel flex flex-col gap-4 p-5 text-sm">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs text-bark-400">{shortId(incident.id)}</span>
+              <span className="font-mono text-xs text-graphite-400">{shortId(incident.id)}</span>
               <SeverityTag severity={incident.severity} />
               <StatusPill status={incident.status} />
-              {incident.ai_mode ? <span className={`text-xs font-medium ${incident.ai_mode === "DEMO" ? "text-amber-800" : "text-leaf-700"}`}>AI Mode: {incident.ai_mode}</span> : null}
+              {incident.ai_mode ? <span className={`text-xs font-medium ${incident.ai_mode === "DEMO" ? "text-amber-800" : "text-success-700"}`}>AI Mode: {incident.ai_mode}</span> : null}
             </div>
             <dl className="grid grid-cols-[110px_1fr] gap-y-2.5 text-[13.5px]">
               {[
@@ -78,7 +78,7 @@ export default function IncidentDetailPage() {
                 ["Track", incident.track_id || "—"],
               ].map(([label, value]) => (
                 <div key={label} className="contents">
-                  <dt className="text-bark-400">{label}</dt>
+                  <dt className="text-graphite-400">{label}</dt>
                   <dd>{value}</dd>
                 </div>
               ))}
@@ -97,13 +97,13 @@ export default function IncidentDetailPage() {
               <h2 className="font-semibold">Review history</h2>
               <ul className="mt-2 space-y-2">
                 {feedback.map((item) => (
-                  <li key={item.id} className="rounded-lg bg-sand px-3 py-2">
+                  <li key={item.id} className="rounded-lg bg-muted px-3 py-2">
                     <div className="font-medium">{STATUS_LABELS[item.decision] || item.decision} · {item.user_name}</div>
-                    <div className="font-mono text-xs text-bark-400">{formatWhen(item.created_at)}</div>
+                    <div className="font-mono text-xs text-graphite-400">{formatWhen(item.created_at)}</div>
                     {item.comment ? <div className="mt-1">{item.comment}</div> : null}
                   </li>
                 ))}
-                {feedback.length === 0 ? <li className="text-bark-500">No review yet.</li> : null}
+                {feedback.length === 0 ? <li className="text-graphite-500">No review yet.</li> : null}
               </ul>
             </div>
           </section>

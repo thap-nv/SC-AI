@@ -30,9 +30,9 @@ const STATUS_TABS = [
 ];
 
 function confidenceColor(value: number) {
-  if (value >= 0.8) return "bg-leaf-600";
-  if (value >= 0.6) return "bg-gold-500";
-  return "bg-[#B5564A]";
+  if (value >= 0.8) return "bg-success-600";
+  if (value >= 0.6) return "bg-warn-500";
+  return "bg-brand-500";
 }
 
 export default function IncidentsPage() {
@@ -85,7 +85,7 @@ export default function IncidentsPage() {
         <Segmented label="Severity" options={SEVERITY_TABS} value={filters.severity} onChange={(value) => update("severity", value)} />
         <Segmented label="Status" options={STATUS_TABS} value={filters.status} onChange={(value) => update("status", value)} />
         <div className="flex-1" />
-        <span className="text-[13px] text-bark-500"><strong className="text-bark-800">{total}</strong> incidents</span>
+        <span className="text-[13px] text-graphite-500"><strong className="text-graphite-800">{total}</strong> incidents</span>
       </div>
       <div className="-mt-2 flex flex-wrap gap-2.5">
         <select aria-label="Camera" className="w-auto py-2 text-[13px]" value={filters.camera_id} onChange={(e) => update("camera_id", e.target.value)}>
@@ -110,23 +110,23 @@ export default function IncidentsPage() {
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={8} className="py-7 text-sm text-bark-500">No incidents match these filters.</td></tr>
+              <tr><td colSpan={8} className="py-7 text-sm text-graphite-500">No incidents match these filters.</td></tr>
             ) : null}
             {items.map((item) => (
-              <tr key={item.id} onClick={() => openIncident(item.id)} className={`cursor-pointer ${item.status === "NEW" && item.severity === "CRITICAL" ? "bg-crimson-50" : ""}`}>
+              <tr key={item.id} onClick={() => openIncident(item.id)} className={`cursor-pointer ${item.status === "NEW" && item.severity === "CRITICAL" ? "bg-brand-50" : ""}`}>
                 <td>
                   <button className="flex flex-col items-start rounded-none bg-transparent p-0 text-left" onClick={(e) => { e.stopPropagation(); openIncident(item.id); }}>
-                    <span className="font-mono text-[12.5px] text-gold-700">{formatTime(item.started_at)}</span>
-                    <span className="text-[11px] font-normal text-bark-300">{formatDay(item.started_at)}</span>
+                    <span className="font-mono text-[12.5px] text-brand-700">{formatTime(item.started_at)}</span>
+                    <span className="text-[11px] font-normal text-graphite-300">{formatDay(item.started_at)}</span>
                   </button>
                 </td>
                 <td className="text-[13.5px]">{item.camera_name}</td>
-                <td className="text-[13.5px] text-bark-600">{item.zone_name || "—"}</td>
+                <td className="text-[13.5px] text-graphite-600">{item.zone_name || "—"}</td>
                 <td className="text-[13.5px] font-medium">{eventLabel(item.event_type)}</td>
                 <td><SeverityTag severity={item.severity} /></td>
                 <td>
                   {item.confidence === null ? (
-                    <span className="text-bark-400">—</span>
+                    <span className="text-graphite-400">—</span>
                   ) : (
                     <span className="flex items-center gap-2">
                       <span className="h-[5px] w-24 overflow-hidden rounded-[3px] bg-line-muted">
@@ -137,14 +137,14 @@ export default function IncidentsPage() {
                   )}
                 </td>
                 <td><StatusPill status={item.status} /></td>
-                <td className="text-base text-gold-600" aria-hidden="true">›</td>
+                <td className="text-base text-graphite-300" aria-hidden="true">›</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {items.length < total ? (
-        <div className="flex items-center justify-center gap-3 text-[13px] text-bark-500">
+        <div className="flex items-center justify-center gap-3 text-[13px] text-graphite-500">
           Showing {items.length} of {total}
           {shown.current < 200 ? (
             <GhostButton onClick={() => { shown.current = 200; load(filters, 200); }}>Show more</GhostButton>
