@@ -31,7 +31,7 @@ Dashboard là công cụ vận hành, phải đọc nhanh trong nhiều giờ, n
 | `brand-600` / `brand-700` | `#006BB8` / `#005A99` | Liên kết, eyebrow, chữ cyan cỡ nhỏ trên nền sáng, viền focus |
 | `brand-50` / `brand-100` | `#EBF8FF` / `#D4F1FF` | Nền nhạt khi hover, vùng đang sửa, bôi chọn chữ |
 | `brand-200` / `brand-300` | `#A9E4FE` / `#6DD4FF` | Chữ cyan trên nền navy (mục sidebar đang chọn, LIVE) |
-| `danger-*` | `#D4183D` (500) … | CRITICAL, CONFIRMED, vi phạm, lỗi, nút "Confirm violation", nút Delete, frame bị bỏ, chấm REC |
+| `danger-*` | `#D4183D` (500) … | CRITICAL, CONFIRMED, vi phạm, lỗi, nút "Confirm violation", nút Delete, frame bị bỏ, chấm REC, toast "New alert" (nền `danger-600`; toast thường vẫn nền navy viền cyan) |
 | `ink` (+ `raised`, `edge`, `field`) | `#0A1525` … | Sidebar, thẻ tối, toast, nhãn trên ảnh camera |
 | `paper` | `#F2F5F9` | Nền trang |
 | `surface` | `#FFFFFF` | Thanh trên cùng, thẻ (`.panel`), ô nhập |
@@ -77,11 +77,16 @@ Font được tải qua `next/font/google` và tự host khi build, nên lúc ch
   - Hiển thị: `Kpi` (thẻ sáng/tối, biến thể `critical`), `SeverityTag`, `StatusPill`, `Snapshot` (ảnh từ API có token).
   - Điều khiển: `Switch` (tone `success` hoặc `brand`), `Segmented`.
   - Nút: `PrimaryButton`, `OutlineButton`, `GhostButton`, `DangerButton`.
+  - `Drawer`: ngăn kéo trượt từ phải (Escape hoặc bấm ra ngoài để đóng), dùng cho "Camera settings".
   - Hoạ tiết: `Logo`, `Rule`, `Marker`, `LiveDot`, `RecDot`.
 - `components/shell.tsx`:
   - Từ `md` trở lên: sidebar navy có logo, icon cho từng mục và số sự cố NEW; thanh trên cùng có AI Mode và đồng hồ giờ nhà máy.
   - Dưới `md`: thanh trên navy và thanh tab dưới, xem mục 6.
   - Breadcrumb và vùng nút hành động của trang.
+  - Thanh trên cùng luôn cao 56px; chữ AI Mode bị cắt bớt thay vì xuống dòng.
+  - `dense`: đầu trang gọn (tiêu đề 26px, bỏ câu "AI raises an alert…", ít khoảng trống) cho màn làm việc: chi tiết camera, Incidents. Các màn này dùng hết bề ngang, lề hai bên bằng nhau; các trang khác vẫn giới hạn 1680px.
+  - `fill`: từ `md`, trang cao đúng một màn hình và phần tử con cuối chiếm phần còn lại. Incidents dùng để bảng cuộn trong khung của nó, bộ lọc và tên cột luôn hiện.
+  - `subtitle`: dòng dưới tiêu đề, thay câu khẩu hiệu (chi tiết camera: trạng thái, mã, khu vực, số luật).
   - Mở luồng sự kiện (SSE) và bật toast khi có cảnh báo mới.
 - `components/providers.tsx`: toast và ngăn kéo xem xét sự cố, gọi qua `useApp()` từ bất kỳ trang nào.
 - `components/incident-drawer.tsx`: ngăn kéo xem xét. Chỉ hiện các bước mà backend cho phép (`REVIEW_TRANSITIONS`).
@@ -102,13 +107,27 @@ Người dùng điện thoại chủ yếu là quản lý an toàn đang ở xư
 - **Khung.** Thanh trên navy cao 56px gồm biểu tượng logo, "Safety Monitor", chip "AI Mode: …" và avatar mở menu tài khoản (tên, vai trò, Sign out). Năm mục chuyển xuống thanh tab cố định ở đáy, có số sự cố NEW. Đồng hồ nhà máy chỉ hiện trên màn rộng.
 - **Đầu trang.** Chỉ giữ link quay lại và tiêu đề (26px). Eyebrow và câu "AI raises an alert…" bị ẩn vì thanh trên đã nói điều đó. Nút hành động trải hết chiều ngang.
 - **Bảng thành thẻ.** Incidents và Rules hiển thị mỗi dòng thành một thẻ, với mức độ và trạng thái luôn thấy được; bảng chỉ dùng từ `md`.
-- **Bộ lọc sự cố.** Chỉ để thanh trạng thái (New, Confirmed…); mức độ, camera, vùng, vi phạm và ngày nằm sau nút "Filters", nút này hiện số bộ lọc đang bật.
-- **Thứ tự.** Overview đưa "Awaiting review" lên trước biểu đồ. Chi tiết camera đưa "People and vehicles" ngay dưới khung hình: hai cột tan ra bằng `contents` và `order-*`.
+- **Bộ lọc sự cố.** Chỉ để thanh trạng thái (New, Confirmed…); mức độ, camera, vùng, vi phạm và ngày nằm sau nút "Filters", nút này hiện số bộ lọc đang bật. Cả thanh dính ngay dưới thanh trên khi cuộn.
+- **Thứ tự.** Overview đưa "Awaiting review" lên trước biểu đồ. Chi tiết camera xếp khung hình, rồi "People and vehicles", "Zones", "Recent alerts", đúng thứ tự trong DOM.
 - **KPI** hai ô một hàng; ô tối đầu tiên trải hai cột.
 - **Canvas vẽ vùng** vẽ nét, điểm góc và nhãn theo tỉ lệ hiển thị thật, nên nhãn vẫn cao ~13px trên điện thoại.
 - **Toast** trải ngang ngay trên thanh tab. Thanh tab tự chừa khoảng `safe-area-inset-bottom` (viewport `cover` trong `app/layout.tsx`).
 
-## 7. Những gì cố ý chưa làm theo design
+## 7. Màn rộng: hai màn làm việc nằm gọn trong một màn hình
+
+- **Incidents.**
+  - Một thanh lọc: trạng thái dạng tab; mức độ, camera, vùng, vi phạm và ngày dạng dropdown, rộng vừa giá trị đang chọn (`field-sizing: content`, có trên Chrome/Edge); "Clear" khi đang lọc.
+  - Chọn camera thì danh sách vùng chỉ còn vùng của camera đó.
+  - Bảng cuộn trong khung, tên cột dính trên cùng; thanh dưới bảng có tổng số và "Show more".
+  - Mỗi sự cố một dòng; sự cố của hôm nay không ghi ngày.
+- **Chi tiết camera.**
+  - Khung hình co theo chiều cao màn hình: `max-h-[calc(100dvh-284px)]`, 284px là phần đầu trang, thanh công cụ và lề. Sửa đầu trang thì sửa số này.
+  - Cột phải (People and vehicles, Zones, Recent alerts) cao đúng bằng khung hình và tự cuộn bên trong.
+  - Số đo (AI FPS đo được / mục tiêu, inference, frames, dropped) nằm trên thanh công cụ của khung, cạnh công tắc overlay và nút toàn màn hình. Cảnh báo vùng bị tạm dừng nằm đè lên đầu khung hình.
+  - Bật/tắt camera nằm ngay trên viên trạng thái dưới tiêu đề (chỉ admin thấy công tắc): "Camera on · Live" xanh, "Camera on · Offline" xám, "Camera off" cam để dễ thấy camera đang không giám sát.
+  - Các cài đặt còn lại (AI FPS, nguồn RTSP/file, worker, nhiều view, upload MP4) nằm trong ngăn kéo "Camera settings", mở bằng nút Settings (chỉ admin).
+
+## 8. Những gì cố ý chưa làm theo design
 
 - **Vùng nội dung không chuyển sang nền tối** như website (xem mục 2).
 - **"Undo decision"**: backend coi quyết định review là một chiều và lưu vết (`OperatorFeedback`), nên ngăn kéo không có nút hoàn tác.

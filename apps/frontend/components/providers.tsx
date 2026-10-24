@@ -33,13 +33,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       {incidentId ? <IncidentDrawer id={incidentId} onClose={() => setIncidentId(null)} onOpen={setIncidentId} toast={showToast} /> : null}
       {/* On a phone the toast spans the width just above the tab bar. */}
       <div aria-live="polite" className="fixed inset-x-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-30 md:inset-x-auto md:bottom-6 md:right-6">
+        {/* A new alert, the only toast that carries an incident to review, is red with a blinking dot so it stands out from routine confirmations. */}
         {toast ? (
-          <div className="flex items-center gap-3.5 rounded-[10px] border-l-[3px] border-brand-500 bg-ink py-3.5 pl-4 pr-4 text-fog-100 shadow-[0_14px_40px_rgba(10,21,37,.35)] motion-safe:animate-slide-in">
-            <Marker className="h-2 w-2 bg-brand-400" />
+          <div className={`flex items-center gap-3.5 rounded-[10px] py-3.5 pl-4 pr-4 motion-safe:animate-slide-in ${toast.incidentId ? "bg-danger-600 text-white shadow-[0_14px_40px_rgba(179,18,47,.4)]" : "border-l-[3px] border-brand-500 bg-ink text-fog-100 shadow-[0_14px_40px_rgba(10,21,37,.35)]"}`}>
+            <Marker className={toast.incidentId ? "h-2 w-2 bg-white motion-safe:animate-rec" : "h-2 w-2 bg-brand-400"} />
             <span className="min-w-0 flex-1 text-[13.5px]">{toast.message}</span>
             {toast.incidentId ? (
               <button
-                className="p-0 text-[13px] font-semibold text-brand-300 hover:text-white"
+                className="whitespace-nowrap rounded-md bg-white/15 px-2.5 py-1 text-[13px] font-semibold text-white hover:bg-white/25"
                 onClick={() => {
                   setIncidentId(toast.incidentId || null);
                   setToast(null);

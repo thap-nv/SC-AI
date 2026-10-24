@@ -78,48 +78,64 @@ export default function IncidentsPage() {
   }, []);
   useIncidentEvents(() => load(), 800);
 
-  function update(key: keyof Filters, value: string) {
-    const next = { ...filters, [key]: value };
+  function apply(next: Filters) {
     setFilters(next);
     shown.current = PAGE;
     load(next, PAGE);
   }
 
+  function update(key: keyof Filters, value: string) {
+    const next = { ...filters, [key]: value };
+    // A zone belongs to one camera; picking another camera drops a zone it does not have.
+    if (key === "camera_id" && value && zones.find((zone) => zone.id === filters.zone_id)?.camera_id !== value) next.zone_id = "";
+    apply(next);
+  }
+
   // On a phone only the status tabs stay out; severity, camera, zone, violation and date fold behind "Filters".
   const folded = [filters.severity, filters.camera_id, filters.zone_id, filters.event_type, filters.on_date].filter(Boolean).length;
+  const filtered = folded > 0 || Boolean(filters.status);
+  const zoneChoices = filters.camera_id ? zones.filter((zone) => zone.camera_id === filters.camera_id) : zones;
+  // Phone: a full-width cell of the folded grid. Wide screen: a control in the one filter row, as tall as the status tabs and,
+  // where the browser supports it, only as wide as the value it shows, so "All cameras" takes less room than the longest camera name.
+  const control = "min-w-0 py-2 text-[13px] md:h-10 md:w-auto md:max-w-[220px] md:py-0 md:[field-sizing:content]";
+  const today = formatDay(new Date());
+  const more = items.length >= total ? null : shown.current < 200 ? (
+    <GhostButton onClick={() => { shown.current = 200; load(filters, 200); }} className="px-3 py-1.5 text-[13px]">Show more</GhostButton>
+  ) : (
+    <span>Narrow the filters to see older incidents</span>
+  );
 
   return (
-    <Shell title="Incidents">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="hidden md:block">
-          <Segmented label="Severity" options={SEVERITY_TABS} value={filters.severity} onChange={(value) => update("severity", value)} />
-        </div>
+    <Shell title="Incidents" dense fill>
+      {/* Every filter in one bar. On a phone it sticks under the top bar; from md the table scrolls in its own panel, so the bar never leaves the screen. */}
+      <div className="sticky top-14 z-[4] -mx-4 -my-2 flex flex-wrap items-center gap-2.5 bg-paper/95 px-4 py-2 backdrop-blur md:static md:m-0 md:gap-2 md:bg-transparent md:p-0 md:backdrop-blur-none">
         <div className="w-full md:w-auto">
           <Segmented label="Status" options={STATUS_TABS} value={filters.status} onChange={(value) => update("status", value)} />
         </div>
         <button type="button" onClick={() => setShowFilters((open) => !open)} aria-expanded={showFilters} aria-controls="incident-filters" className="border border-line-strong bg-surface text-[13px] font-semibold text-graphite-800 md:hidden">
           Filters{folded ? ` · ${folded}` : ""} <span aria-hidden="true">{showFilters ? "▴" : "▾"}</span>
         </button>
-        <div className="flex-1" />
-        <span className="text-[13px] text-graphite-500"><strong className="text-graphite-800">{total}</strong> incidents</span>
-      </div>
-      <div id="incident-filters" className={`-mt-2 gap-2.5 ${showFilters ? "grid grid-cols-2" : "hidden"} md:flex md:flex-wrap`}>
-        <select aria-label="Severity" className="min-w-0 py-2 text-[13px] md:hidden" value={filters.severity} onChange={(e) => update("severity", e.target.value)}>
-          {SEVERITY_TABS.map((tab) => <option key={tab.value} value={tab.value}>{tab.value ? tab.label : "All severities"}</option>)}
-        </select>
-        <select aria-label="Camera" className="min-w-0 py-2 text-[13px] md:w-auto" value={filters.camera_id} onChange={(e) => update("camera_id", e.target.value)}>
-          <option value="">All cameras</option>
-          {cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}
-        </select>
-        <select aria-label="Zone" className="min-w-0 py-2 text-[13px] md:w-auto" value={filters.zone_id} onChange={(e) => update("zone_id", e.target.value)}>
-          <option value="">All zones</option>
-          {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
-        </select>
-        <select aria-label="Violation" className="min-w-0 py-2 text-[13px] md:w-auto" value={filters.event_type} onChange={(e) => update("event_type", e.target.value)}>
-          <option value="">All violations</option>
-          {Object.entries(EVENT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select>
-        <input aria-label="Date" type="date" className="min-w-0 py-2 text-[13px] md:w-auto" value={filters.on_date} onChange={(e) => update("on_date", e.target.value)} />
+        <div id="incident-filters" className={`order-last w-full gap-2.5 md:order-none md:contents ${showFilters ? "grid grid-cols-2" : "hidden"}`}>
+          <select aria-label="Severity" className={control} value={filters.severity} onChange={(e) => update("severity", e.target.value)}>
+            {SEVERITY_TABS.map((tab) => <option key={tab.value} value={tab.value}>{tab.value ? tab.label : "All severities"}</option>)}
+          </select>
+          <select aria-label="Camera" className={control} value={filters.camera_id} onChange={(e) => update("camera_id", e.target.value)}>
+            <option value="">All cameras</option>
+            {cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}
+          </select>
+          <select aria-label="Zone" className={control} value={filters.zone_id} onChange={(e) => update("zone_id", e.target.value)}>
+            <option value="">All zones</option>
+            {zoneChoices.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
+          </select>
+          <select aria-label="Violation" className={control} value={filters.event_type} onChange={(e) => update("event_type", e.target.value)}>
+            <option value="">All violations</option>
+            {Object.entries(EVENT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+          <input aria-label="Date" type="date" className={control} value={filters.on_date} onChange={(e) => update("on_date", e.target.value)} />
+        </div>
+        {filtered ? <button type="button" onClick={() => apply(EMPTY)} className="link bg-transparent px-1.5 text-[13px]">Clear</button> : null}
+        {/* Wide screen: the count sits in the bar under the table. */}
+        <span className="ml-auto whitespace-nowrap text-[13px] text-graphite-500 md:hidden"><strong className="text-graphite-800">{total}</strong> incidents</span>
       </div>
       {error ? <ErrorText>{error}</ErrorText> : null}
       {/* Phone: one card per incident, with what a reviewer scans for first; the table needs a wide screen. */}
@@ -144,54 +160,61 @@ export default function IncidentsPage() {
           </button>
         ))}
       </div>
-      <div className="panel hidden overflow-auto md:block">
-        <table className="min-w-[1000px]">
-          <thead>
-            <tr><th>Time</th><th>Camera</th><th>Zone</th><th>Violation</th><th>Severity</th><th>AI confidence</th><th>Status</th><th aria-label="Open" /></tr>
-          </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr><td colSpan={8} className="py-7 text-sm text-graphite-500">No incidents match these filters.</td></tr>
-            ) : null}
-            {items.map((item) => (
-              <tr key={item.id} onClick={() => openIncident(item.id)} className={`cursor-pointer ${urgent(item) ? "bg-danger-50" : ""}`}>
-                <td>
-                  <button className="flex flex-col items-start rounded-none bg-transparent p-0 text-left" onClick={(e) => { e.stopPropagation(); openIncident(item.id); }}>
-                    <span className="font-mono text-[12.5px] text-brand-700">{formatTime(item.started_at)}</span>
-                    <span className="text-[11px] font-normal text-graphite-300">{formatDay(item.started_at)}</span>
-                  </button>
-                </td>
-                <td className="text-[13.5px]">{item.camera_name}</td>
-                <td className="text-[13.5px] text-graphite-600">{item.zone_name || "—"}</td>
-                <td className="text-[13.5px] font-medium">{eventLabel(item.event_type)}</td>
-                <td><SeverityTag severity={item.severity} /></td>
-                <td>
-                  {item.confidence === null ? (
-                    <span className="text-graphite-400">—</span>
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <span className="h-[5px] w-24 overflow-hidden rounded-[3px] bg-line-muted">
-                        <span className={`block h-full ${confidenceColor(item.confidence)}`} style={{ width: `${Math.round(item.confidence * 100)}%` }} />
-                      </span>
-                      <span className="w-[34px] font-mono text-xs">{Math.round(item.confidence * 100)}%</span>
-                    </span>
-                  )}
-                </td>
-                <td><StatusPill status={item.status} /></td>
-                <td className="text-base text-graphite-300" aria-hidden="true">›</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Wide screen: the panel takes the height left under the filters and scrolls inside, with the column names pinned. */}
+      <div className="hidden min-h-[240px] flex-1 flex-col md:flex">
+        <div className="panel flex min-h-0 flex-col overflow-hidden">
+          <div className="min-h-0 overflow-auto">
+            {/* One line a row. Below 2xl the cells pack tighter and today's rows drop the date, so a laptop screen still fits every column. */}
+            <table className="min-w-[1000px] whitespace-nowrap [&_td]:px-3 [&_th]:px-3 2xl:[&_td]:px-4 2xl:[&_th]:px-4">
+              <thead className="sticky-head">
+                <tr><th>Time</th><th>Camera</th><th>Zone</th><th>Violation</th><th>Severity</th><th>AI confidence</th><th>Status</th><th aria-label="Open" /></tr>
+              </thead>
+              <tbody>
+                {items.length === 0 ? (
+                  <tr><td colSpan={8} className="py-7 text-sm text-graphite-500">No incidents match these filters.</td></tr>
+                ) : null}
+                {items.map((item) => (
+                  <tr key={item.id} onClick={() => openIncident(item.id)} className={`cursor-pointer ${urgent(item) ? "bg-danger-50" : ""}`}>
+                    <td className="py-2.5">
+                      <button className="flex items-baseline gap-2 rounded-none bg-transparent p-0 text-left" onClick={(e) => { e.stopPropagation(); openIncident(item.id); }}>
+                        <span className="font-mono text-[12.5px] text-brand-700">{formatTime(item.started_at)}</span>
+                        {formatDay(item.started_at) === today ? null : <span className="text-[11.5px] font-normal text-graphite-400">{formatDay(item.started_at)}</span>}
+                      </button>
+                    </td>
+                    <td className="py-2.5 text-[13.5px]">{item.camera_name}</td>
+                    <td className="py-2.5 text-[13.5px] text-graphite-600">{item.zone_name || "—"}</td>
+                    <td className="py-2.5 text-[13.5px] font-medium">{eventLabel(item.event_type)}</td>
+                    <td className="py-2.5"><SeverityTag severity={item.severity} /></td>
+                    <td className="py-2.5">
+                      {item.confidence === null ? (
+                        <span className="text-graphite-400">—</span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <span className="h-[5px] w-14 overflow-hidden rounded-[3px] bg-line-muted 2xl:w-24">
+                            <span className={`block h-full ${confidenceColor(item.confidence)}`} style={{ width: `${Math.round(item.confidence * 100)}%` }} />
+                          </span>
+                          <span className="w-[34px] font-mono text-xs">{Math.round(item.confidence * 100)}%</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5"><StatusPill status={item.status} /></td>
+                    <td className="py-2.5 text-base text-graphite-300" aria-hidden="true">›</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 border-t border-line-soft bg-subtle px-4 py-2 text-[13px] text-graphite-500">
+            <span>{items.length < total ? `Showing ${items.length} of ` : ""}<strong className="text-graphite-800">{total}</strong> incidents</span>
+            <div className="flex-1" />
+            {more}
+          </div>
+        </div>
       </div>
       {items.length < total ? (
-        <div className="flex items-center justify-center gap-3 text-[13px] text-graphite-500">
+        <div className="-mt-1.5 flex items-center justify-center gap-3 text-[13px] text-graphite-500 md:hidden">
           Showing {items.length} of {total}
-          {shown.current < 200 ? (
-            <GhostButton onClick={() => { shown.current = 200; load(filters, 200); }}>Show more</GhostButton>
-          ) : (
-            <span>· narrow the filters to see older incidents</span>
-          )}
+          {more}
         </div>
       ) : null}
     </Shell>

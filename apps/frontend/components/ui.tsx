@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { imageUrl } from "@/lib/api";
 import { STATUS_LABELS } from "@/lib/labels";
 
@@ -153,6 +153,33 @@ export function Segmented<T extends string>({ options, value, onChange, label }:
         </button>
       ))}
     </div>
+  );
+}
+
+// A panel that slides in from the right over the dimmed page, like the incident review drawer. Escape or a click outside closes it.
+export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const closeLatest = useRef(onClose);
+  closeLatest.current = onClose;
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeLatest.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return (
+    <>
+      <div className="fixed inset-0 z-20 bg-ink/45" onClick={onClose} aria-hidden="true" />
+      <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-y-0 right-0 z-[21] flex w-[min(420px,100vw)] flex-col bg-surface shadow-[-20px_0_50px_rgba(10,21,37,.25)] motion-safe:animate-slide-in">
+        <div className="flex items-center gap-2.5 border-b border-line-muted px-[22px] py-[18px]">
+          <h2 className="flex-1 text-base font-semibold">{title}</h2>
+          <button ref={closeRef} onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center border border-line bg-surface p-0 text-lg text-graphite-600 hover:bg-muted">×</button>
+        </div>
+        <div className="flex flex-1 flex-col gap-4 overflow-auto px-[22px] py-5">{children}</div>
+      </div>
+    </>
   );
 }
 

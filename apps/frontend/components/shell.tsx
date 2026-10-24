@@ -59,9 +59,17 @@ type ShellProps = {
   children: React.ReactNode;
   actions?: React.ReactNode;
   back?: { href: string; label: string };
+  // Shown under the title on every screen size, in place of the tagline.
+  subtitle?: React.ReactNode;
+  // Work screens (a camera, the incident list) trade the roomy header for a smaller title and tighter spacing,
+  // and use the whole width, so a wide screen has the same margin on both sides instead of a gap on the right.
+  dense?: boolean;
+  // From md up the page is exactly one screen tall: the children share the height left under the header,
+  // so a long list scrolls inside its own panel instead of taking the filters above it off screen.
+  fill?: boolean;
 };
 
-export default function Shell({ title, children, actions, back }: ShellProps) {
+export default function Shell({ title, children, actions, back, subtitle, dense = false, fill = false }: ShellProps) {
   const router = useRouter();
   const path = usePathname();
   const { toast } = useApp();
@@ -155,7 +163,7 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
   };
 
   return (
-    <div className="min-h-screen md:flex">
+    <div className={`min-h-screen md:flex ${fill ? "md:h-screen" : ""}`}>
       {/* Phone: one slim navy bar with the mark, AI Mode and the account menu; the sections move to the tab bar at the bottom. */}
       <header className="sticky top-0 z-10 flex h-14 items-center gap-2.5 bg-ink px-4 text-fog-100 md:hidden">
         <Link href="/" className="flex min-w-0 items-center gap-2.5">
@@ -231,11 +239,12 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
       </aside>
 
       {/* On a phone the bottom padding keeps the last card clear of the tab bar. */}
-      <main className="flex min-w-0 flex-1 flex-col pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0">
-        <header className="sticky top-0 z-[5] hidden flex-wrap items-center gap-4 border-b border-line bg-surface/90 px-9 py-3 backdrop-blur md:flex">
-          <div className={`flex items-center gap-2.5 rounded-full border py-1.5 pl-2.5 pr-3 ${demo ? "border-amber-200 bg-amber-50" : "border-success-200 bg-success-50"}`}>
+      <main className={`flex min-w-0 flex-1 flex-col pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0 ${fill ? "md:overflow-y-auto" : ""}`}>
+        {/* Always 56px tall: the camera view sizes itself to the screen height left under it. The mode text truncates rather than wrap. */}
+        <header className="sticky top-0 z-[5] hidden h-14 shrink-0 items-center gap-4 border-b border-line bg-surface/90 px-9 backdrop-blur md:flex">
+          <div title={modeDetail} className={`flex min-w-0 items-center gap-2.5 rounded-full border py-1.5 pl-2.5 pr-3 ${demo ? "border-amber-200 bg-amber-50" : "border-success-200 bg-success-50"}`}>
             <LiveDot demo={demo} />
-            <span className={`text-[13px] ${demo ? "text-amber-950" : "text-success-900"}`}>
+            <span className={`truncate text-[13px] ${demo ? "text-amber-950" : "text-success-900"}`}>
               <strong className="font-bold">AI Mode: {mode}</strong>
               {demo ? " — demonstration labels, not a trained factory model" : " — running the configured detector"}
               {connected ? "" : " · worker still connecting"}
@@ -243,16 +252,16 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
           </div>
           <div className="flex-1" />
           {now ? (
-            <div className="flex items-center gap-2 font-mono text-[12.5px] text-graphite-500" aria-label="Factory time">
-              <span>{formatDate(now)}</span>
-              <span className="h-1 w-1 rounded-full bg-brand-500" aria-hidden="true" />
+            <div className="flex shrink-0 items-center gap-2 font-mono text-[12.5px] text-graphite-500" aria-label="Factory time">
+              <span className="hidden lg:inline">{formatDate(now)}</span>
+              <span className="hidden h-1 w-1 rounded-full bg-brand-500 lg:inline-block" aria-hidden="true" />
               <span className="font-medium text-graphite-800">{formatTime(now)}</span>
               <span>ICT</span>
             </div>
           ) : null}
         </header>
 
-        <div className="flex w-full max-w-[1680px] flex-col gap-5 px-4 pb-8 pt-5 md:gap-6 md:px-9 md:pb-12 md:pt-[30px]">
+        <div className={`flex w-full flex-col gap-5 px-4 pb-8 pt-5 md:px-9 ${dense ? "md:gap-4 md:pb-6 md:pt-5" : "max-w-[1680px] md:gap-6 md:pb-12 md:pt-[30px]"} ${fill ? "md:min-h-0 md:flex-1" : ""}`}>
           <div className="flex flex-wrap items-end gap-x-4 gap-y-3.5">
             <div className="flex min-w-0 flex-[1_1_260px] flex-col gap-1.5">
               {/* On a phone only the back link stays; the eyebrow and tagline repeat what the top bar already says. */}
@@ -265,8 +274,8 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
                 ) : null}
                 <div className="eyebrow hidden text-brand-600 md:block">Factory · Safety</div>
               </div>
-              <h1 className="m-0 font-display text-[26px] font-bold leading-tight tracking-[-0.01em] text-graphite-900 md:text-[32px]">{title}</h1>
-              <p className="hidden text-[14.5px] text-graphite-500 md:block">AI raises an alert. A person decides what it means.</p>
+              <h1 className={`m-0 font-display text-[26px] font-bold leading-tight tracking-[-0.01em] text-graphite-900 ${dense ? "" : "md:text-[32px]"}`}>{title}</h1>
+              {subtitle ? <div>{subtitle}</div> : dense ? null : <p className="hidden text-[14.5px] text-graphite-500 md:block">AI raises an alert. A person decides what it means.</p>}
             </div>
             {actions ? <div className="flex w-full gap-2.5 sm:w-auto sm:flex-wrap [&>*]:flex-auto [&>*]:whitespace-nowrap sm:[&>*]:flex-none">{actions}</div> : null}
           </div>

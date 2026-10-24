@@ -63,6 +63,11 @@ td {
   @apply border-b border-line-soft px-4 py-3 align-middle;
 }
 
+/* Header row that stays in view while its panel scrolls. Collapsed borders do not travel with a sticky cell, so the rule under it is a shadow. */
+thead.sticky-head th {
+  @apply sticky top-0 z-[1] border-b-0 shadow-[inset_0_-1px_0_#EDF1F6];
+}
+
 tbody tr {
   @apply transition-colors hover:bg-subtle;
 }
