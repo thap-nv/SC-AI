@@ -65,7 +65,7 @@ export default function CamerasPage() {
           const live = LIVE.has(camera.status);
           const ruleCount = rules.filter((rule) => rule.camera_id === camera.id).length;
           return (
-            <article key={camera.id} className="panel relative flex flex-col overflow-hidden transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(37,37,37,.10)]">
+            <article key={camera.id} className="panel relative flex flex-col overflow-hidden transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(10,21,37,.10)]">
               <div className="relative aspect-[2/1] overflow-hidden bg-stripes">
                 <Snapshot
                   path={`/api/cameras/${camera.id}/snapshot?raw=true`}

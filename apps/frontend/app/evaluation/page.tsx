@@ -40,7 +40,7 @@ export default function EvaluationPage() {
       actions={<OutlineButton onClick={() => { window.location.href = `${API_URL}/api/system/evaluation?format=csv&access_token=${getToken()}`; }}>Download CSV</OutlineButton>}
     >
       {error ? <ErrorText>{error}</ErrorText> : null}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] md:gap-4">
         <Kpi label="Incidents" value={report?.incidents ?? "—"} hint="Raised by AI in this POC" />
         <Kpi label="Reviewed" value={report?.reviewed ?? "—"} hint={report ? `${reviewedShare}% of all incidents` : undefined} />
         <Kpi label="False positive rate" value={report ? percent(report.false_positive_rate) : "—"} hint="Among reviewed incidents" />
@@ -48,12 +48,12 @@ export default function EvaluationPage() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <section className="panel flex flex-col gap-4 px-6 py-[22px]">
+        <section className="panel flex flex-col gap-4 px-4 py-5 md:px-6 md:py-[22px]">
           <h2 className="text-base font-semibold">By violation</h2>
           {byType.length === 0 ? <p className="text-sm text-graphite-500">No incidents yet.</p> : null}
           <div className="flex flex-col gap-3">
             {byType.map(([type, count]) => (
-              <div key={type} className="grid grid-cols-[minmax(0,180px)_minmax(0,1fr)_34px] items-center gap-3">
+              <div key={type} className="grid grid-cols-[minmax(0,128px)_minmax(0,1fr)_30px] items-center gap-3 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)_34px]">
                 <span className="text-[13.5px]">{eventLabel(type)}</span>
                 <span className="h-3 overflow-hidden rounded-[3px] bg-paper">
                   <span className="block h-full rounded-[3px] motion-safe:transition-[width] motion-safe:duration-700" style={{ width: `${(count / most) * 100}%`, background: (SEVERITY[report?.by_event_severity?.[type] || ""] || SEVERITY.HIGH).bar }} />
@@ -65,16 +65,16 @@ export default function EvaluationPage() {
         </section>
 
         <div className="flex flex-col gap-5">
-          <section className="panel-dark flex flex-col gap-3.5 px-6 py-[22px]">
+          <section className="panel-dark flex flex-col gap-3.5 px-4 py-5 md:px-6 md:py-[22px]">
             <h2 className="text-base font-semibold text-fog-50">Frame pipeline</h2>
             <div className="flex h-3.5 overflow-hidden rounded bg-ink-raised" role="img" aria-label={`${Math.round(processedShare * 100)}% of frames processed`}>
               <span className="bg-gradient-to-r from-fog-300 to-white" style={{ width: `${processedShare * 100}%` }} />
-              {frames ? <span className="flex-1 bg-[repeating-linear-gradient(135deg,#D1002D_0_5px,#87001D_5px_10px)]" /> : null}
+              {frames ? <span className="flex-1 bg-[repeating-linear-gradient(135deg,#B3122F_0_5px,#730C1F_5px_10px)]" /> : null}
             </div>
             <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
                 ["Processed", String(report?.frames_processed ?? "—"), "text-white", ""],
-                ["Dropped", String(report?.dropped_frames ?? "—"), "text-brand-300", ""],
+                ["Dropped", String(report?.dropped_frames ?? "—"), "text-danger-300", ""],
                 ["Inference", report?.average_inference_ms === null || report?.average_inference_ms === undefined ? "—" : String(Math.round(report.average_inference_ms)), "text-fog-50", report?.average_inference_ms === null || report?.average_inference_ms === undefined ? "" : "ms"],
                 ["Cameras reporting", String(report?.cameras_reporting ?? "—"), "text-fog-50", ""],
               ].map(([label, value, color, unit]) => (
@@ -95,7 +95,7 @@ export default function EvaluationPage() {
                   : `${Math.round(processedShare * 100)}% of frames reach inference.`}
             </p>
           </section>
-          <section className="panel flex flex-col gap-2.5 px-6 py-5">
+          <section className="panel flex flex-col gap-2.5 px-4 py-5 md:px-6">
             <h2 className="text-sm font-semibold">How to read these numbers</h2>
             {(report?.notes || []).map((note) => (
               <p key={note} className="flex items-baseline gap-2.5 text-[13px] leading-normal text-graphite-600">

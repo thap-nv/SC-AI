@@ -86,10 +86,11 @@ export default function IncidentDetailPage() {
             {canReview && open ? (
               <div className="flex flex-col gap-2.5 border-t border-line-soft pt-4">
                 <textarea rows={3} placeholder="Note for the record (optional)" value={comment} onChange={(e) => setComment(e.target.value)} />
-                <div className="flex flex-wrap gap-2">
-                  {incident.status === "NEW" ? <DangerButton onClick={() => review("confirm")}>Confirm violation</DangerButton> : null}
-                  <GhostButton onClick={() => review("false-positive")}>False positive</GhostButton>
-                  <PrimaryButton onClick={() => review("resolve")}>Mark resolved</PrimaryButton>
+                {/* Two equal columns, as in the review drawer; an odd last button takes the whole row. */}
+                <div className="grid grid-cols-2 gap-2.5 [&>*:last-child:nth-child(odd)]:col-span-2">
+                  {incident.status === "NEW" ? <DangerButton className="py-3" onClick={() => review("confirm")}>Confirm violation</DangerButton> : null}
+                  <GhostButton className="py-3" onClick={() => review("false-positive")}>False positive</GhostButton>
+                  <PrimaryButton className="py-3" onClick={() => review("resolve")}>Mark resolved</PrimaryButton>
                 </div>
               </div>
             ) : null}

@@ -77,10 +77,10 @@ export default function IncidentDrawer({ id, onClose, onOpen, toast }: { id: str
   return (
     <>
       <div className="fixed inset-0 z-20 bg-ink/45" onClick={onClose} aria-hidden="true" />
-      <div role="dialog" aria-modal="true" aria-labelledby="incident-drawer-title" className="fixed inset-y-0 right-0 z-[21] flex w-[min(460px,100vw)] flex-col overflow-auto bg-surface shadow-[-20px_0_50px_rgba(20,22,25,.25)] motion-safe:animate-slide-in">
+      <div role="dialog" aria-modal="true" aria-labelledby="incident-drawer-title" className="fixed inset-y-0 right-0 z-[21] flex w-[min(460px,100vw)] flex-col overflow-auto bg-surface shadow-[-20px_0_50px_rgba(10,21,37,.25)] motion-safe:animate-slide-in">
         <div className="flex items-center gap-2.5 border-b border-line-muted px-[22px] py-[18px]">
           <span className="flex-1 font-mono text-xs text-graphite-400">{shortId(id)}</span>
-          <button ref={closeRef} onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center border border-line bg-surface p-0 text-base text-graphite-600 hover:bg-muted">×</button>
+          <button ref={closeRef} onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center border border-line bg-surface p-0 text-lg text-graphite-600 hover:bg-muted">×</button>
         </div>
         <div className="relative aspect-[1724/967] shrink-0 overflow-hidden bg-stripes">
           {incident?.snapshot_uri ? (
@@ -123,7 +123,7 @@ export default function IncidentDrawer({ id, onClose, onOpen, toast }: { id: str
                 <>
                   <div className="rounded-[10px] bg-muted px-4 py-3.5 text-[13px] leading-normal text-graphite-600">AI raised this alert. Your decision is recorded and feeds the false-positive rate.</div>
                   <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Note for the record (optional)" aria-label="Review note" />
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-2 gap-2.5 [&>*:last-child:nth-child(odd)]:col-span-2">
                     {actions.map((action) => {
                       const Button = action.kind === "danger" ? DangerButton : action.kind === "primary" ? PrimaryButton : GhostButton;
                       return (

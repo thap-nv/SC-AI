@@ -15,7 +15,7 @@ type Check = { item?: string; text: string; state: "violation" | "ok" | "unknown
 
 const ITEM_NAMES: Record<string, string> = { helmet: "Helmet", clothing: "Clothing", shoes: "Shoes", mask: "Mask" };
 const CHECK_CHIPS: Record<Check["state"], { mark: string; style: string }> = {
-  violation: { mark: "✗", style: "bg-brand-500/25 text-brand-200" },
+  violation: { mark: "✗", style: "bg-danger-500/25 text-danger-200" },
   ok: { mark: "✓", style: "bg-success-600/20 text-success-200" },
   unknown: { mark: "?", style: "bg-ink-edge text-fog-300" },
 };
@@ -54,7 +54,7 @@ type Live = {
 // How a tracked person or vehicle reads in the "In view" card.
 function verdict(track: Track) {
   const checks = track.checks || [];
-  if (checks.some((check) => check.state === "violation")) return { chip: "Violation", box: "border-brand-500", style: "bg-brand-500/20 text-brand-200" };
+  if (checks.some((check) => check.state === "violation")) return { chip: "Violation", box: "border-danger-500", style: "bg-danger-500/20 text-danger-200" };
   const hands = track.class_name === "hands";
   if (checks.length && checks.every((check) => check.state === "ok")) return { chip: hands ? "All steps done" : track.class_name === "person" ? "Compliant" : "Allowed", box: "border-success-600", style: "bg-success-600/20 text-success-200" };
   return { chip: hands ? "Washing" : "Not checked", box: "border-fog-500", style: "bg-ink-edge text-fog-300" };
@@ -232,14 +232,20 @@ export default function CameraDetailPage() {
             {camera.enabled ? (isLive ? "Live" : "Offline") : "Disabled"}
           </span>
         ) : null}
-        <span className="font-mono text-[12.5px] text-graphite-500">{camera?.code} · {camera?.area} · {camera?.ai_fps} FPS · {ruleCount} {ruleCount === 1 ? "rule" : "rules"}</span>
+        {/* Each fact stays whole when the line wraps on a phone. */}
+        <span className="flex flex-wrap gap-x-1.5 font-mono text-[12.5px] text-graphite-500">
+          {[camera?.code, camera?.area, `${camera?.ai_fps} FPS`, `${ruleCount} ${ruleCount === 1 ? "rule" : "rules"}`].map((fact, index) => (
+            <span key={index} className="whitespace-nowrap">{index ? "· " : ""}{fact}</span>
+          ))}
+        </span>
       </div>
       {error ? <ErrorText>{error}</ErrorText> : null}
       {message ? <Notice>{message}</Notice> : null}
 
-      <div className="flex flex-wrap items-start gap-5">
-        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
-          <section className="panel flex flex-col gap-3.5 p-4">
+      {/* Two columns on a wide screen. Stacked, the columns dissolve so the order can put people and vehicles right under the view. */}
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
+        <div className="contents xl:flex xl:min-w-0 xl:flex-1 xl:flex-col xl:gap-5">
+          <section className="panel order-1 flex flex-col gap-3.5 p-4 xl:order-none">
             <div className="flex flex-wrap items-center gap-3 px-1">
               <h2 className="flex-1 text-base font-semibold">Camera view</h2>
               <span className="flex items-center gap-2.5 text-[13px] font-medium text-graphite-600">
@@ -248,7 +254,7 @@ export default function CameraDetailPage() {
               </span>
             </div>
             {pausedZones.length ? (
-              <div className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-700">
+              <div className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">
                 {pausedZones.map((zone) => zone.name).join(", ")} {pausedZones.length === 1 ? "is" : "are"} paused because the camera no longer shows {pausedZones.length === 1 ? "it" : "them"}. Rules there resume when the view matches again, or <Link href={`/cameras/${params.id}/zones`} className="underline">redraw</Link> for the new view.
               </div>
             ) : null}
@@ -259,7 +265,7 @@ export default function CameraDetailPage() {
                 <div className="absolute inset-0 grid place-items-center bg-stripes font-mono text-xs text-fog-500">waiting for the first frame · {camera?.code}</div>
               )}
               {isLive && overlay && frame ? (
-                <span className="pointer-events-none absolute inset-x-0 hidden h-0.5 bg-gradient-to-r from-transparent via-brand-400/90 to-transparent shadow-[0_0_12px_rgba(238,0,51,.55)] motion-safe:block motion-safe:animate-scan" aria-hidden="true" />
+                <span className="pointer-events-none absolute inset-x-0 hidden h-0.5 bg-gradient-to-r from-transparent via-brand-400/90 to-transparent shadow-[0_0_12px_rgba(72,198,253,.55)] motion-safe:block motion-safe:animate-scan" aria-hidden="true" />
               ) : null}
               <span className="absolute bottom-3 left-3 flex items-center gap-2 rounded bg-ink/80 px-2.5 py-[5px] font-mono text-[11px] text-fog-100">
                 {isLive ? <RecDot /> : null}
@@ -283,35 +289,38 @@ export default function CameraDetailPage() {
             </dl>
           </section>
 
-          <section className="panel overflow-hidden">
+          <section className="panel order-3 overflow-hidden xl:order-none">
             <div className="flex items-center px-5 pb-3 pt-4">
               <h2 className="flex-1 text-[15px] font-semibold">Recent alerts on this camera</h2>
               <Link href={`/incidents?camera_id=${params.id}`} className="link text-[13px]">All →</Link>
             </div>
             {recent.length === 0 ? <p className="border-t border-line-soft px-5 pb-[18px] pt-3.5 text-[13px] text-graphite-500">No alerts from this camera yet.</p> : null}
             {recent.map((item) => (
-              <button key={item.id} onClick={() => openIncident(item.id)} className="flex w-full flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-none border-t border-line-soft bg-transparent px-5 py-[11px] text-left text-graphite-800 hover:bg-subtle">
-                <span className="w-[72px] font-mono text-[12.5px] text-brand-700">{formatTime(item.started_at)}</span>
-                <span className="min-w-0 flex-[1_1_180px] text-[13.5px] font-medium">
-                  {eventLabel(item.event_type)} <span className="font-normal text-graphite-400">· {item.zone_name || "—"}</span>
-                </span>
-                <span className="flex items-center gap-2.5">
-                  <SeverityTag severity={item.severity} />
-                  <StatusPill status={item.status} />
+              <button key={item.id} onClick={() => openIncident(item.id)} className="flex w-full items-start gap-3.5 rounded-none border-t border-line-soft bg-transparent px-5 py-[11px] text-left text-graphite-800 hover:bg-subtle">
+                <span className="w-[62px] shrink-0 pt-px font-mono text-[12.5px] text-brand-700">{formatTime(item.started_at)}</span>
+                {/* When the row is narrow the tags drop under the text, still clear of the time column. */}
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3.5 gap-y-1.5">
+                  <span className="min-w-0 flex-[1_1_180px] text-[13.5px] font-medium">
+                    {eventLabel(item.event_type)} <span className="font-normal text-graphite-400">· {item.zone_name || "—"}</span>
+                  </span>
+                  <span className="flex items-center gap-2.5">
+                    <SeverityTag severity={item.severity} />
+                    <StatusPill status={item.status} />
+                  </span>
                 </span>
               </button>
             ))}
           </section>
         </div>
 
-        <div className="flex min-w-0 max-w-full flex-[1_1_300px] flex-col gap-5">
-          <section className="panel-dark flex flex-col gap-3.5 p-5">
+        <div className="contents xl:flex xl:w-[320px] xl:shrink-0 xl:flex-col xl:gap-5">
+          <section className="panel-dark order-2 flex flex-col gap-3.5 p-5 xl:order-none">
             <div className="relative flex items-baseline gap-2.5">
               <h2 className="flex-1 text-base font-semibold text-fog-50">People and vehicles</h2>
               <span className="font-display text-2xl font-bold text-white">{tracks.length}</span>
             </div>
-            {/* A fixed height that scrolls, so people coming and going never move the panels below. */}
-            <div className="relative -mr-2 flex h-[336px] flex-col gap-2 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
+            {/* In the side column a fixed height that scrolls, so people coming and going never move the panels below. Stacked, it fits its content. */}
+            <div className="relative -mr-2 flex max-h-[300px] flex-col gap-2 overflow-y-auto pr-2 [scrollbar-gutter:stable] xl:h-[336px] xl:max-h-none">
               {tracks.length === 0 ? <p className="text-[13.5px] text-fog-300">No person detected on the latest frame.</p> : null}
               {ordered.map((track) => {
                 const view = verdict(track);
@@ -345,7 +354,7 @@ export default function CameraDetailPage() {
           </section>
 
           {live?.zones?.length ? (
-            <section className="panel p-5">
+            <section className="panel order-4 p-5 xl:order-none">
               <h2 className="text-base font-semibold">Zones</h2>
               <ul className="mt-3 space-y-2 text-sm">
                 {live.zones.map((zone) => {
@@ -362,7 +371,7 @@ export default function CameraDetailPage() {
           ) : null}
 
           {admin && camera ? (
-            <section className="panel flex flex-col gap-4 p-5">
+            <section className="panel order-5 flex flex-col gap-4 p-5 xl:order-none">
               <h2 className="text-base font-semibold">Camera settings</h2>
               <div className="flex items-center gap-3 rounded-[10px] bg-muted px-3.5 py-3">
                 <div className="flex-1">
@@ -394,7 +403,7 @@ export default function CameraDetailPage() {
                 onClick={() => save({ multi_view: !camera.multi_view })}
                 className="flex items-start gap-3 rounded-none bg-transparent p-0 text-left font-normal text-graphite-800"
               >
-                <span className={`mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded border-[1.5px] text-xs font-bold text-surface ${camera.multi_view ? "border-brand-500 bg-brand-500" : "border-line-strong bg-surface"}`}>{camera.multi_view ? "✓" : ""}</span>
+                <span className={`mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded border-[1.5px] text-xs font-bold text-ink ${camera.multi_view ? "border-brand-500 bg-brand-500" : "border-line-strong bg-surface"}`}>{camera.multi_view ? "✓" : ""}</span>
                 <span className="flex flex-col gap-[3px]">
                   <span className="text-[13.5px] font-semibold">Camera has several views</span>
                   <span className="text-xs leading-normal text-graphite-400">For PTZ presets. Zones lock to one view; only the matching view is checked. Leave off for a fixed camera.</span>

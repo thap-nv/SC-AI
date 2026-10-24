@@ -56,8 +56,9 @@ export default function OverviewPage() {
   return (
     <Shell title="Overview">
       {error ? <ErrorText>{error}</ErrorText> : null}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-4">
-        <Kpi dark label="Active cameras" value={data?.active_cameras ?? "—"} unit={data ? `/${data.camera_count}` : undefined} hint="Processing or online" />
+      {/* Two tiles to a row on a phone, the dark lead tile across both. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fit,minmax(190px,1fr))] md:gap-4">
+        <Kpi dark className="col-span-2 md:col-span-1" label="Active cameras" value={data?.active_cameras ?? "—"} unit={data ? `/${data.camera_count}` : undefined} hint="Processing or online" />
         <Kpi label="Incidents today" value={data?.incidents_today ?? "—"} hint={data ? `${data.new_incidents} still waiting for a person` : undefined} />
         <Kpi label="Critical today" critical value={data?.critical_incidents ?? "—"} hint="Act on these first" />
         <Kpi label="Confirmed today" value={data?.confirmed_incidents ?? "—"} hint="Marked real by an operator" />
@@ -65,7 +66,7 @@ export default function OverviewPage() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <section className="panel flex flex-col gap-[18px] px-6 py-[22px]">
+        <section className="panel flex flex-col gap-[18px] px-4 py-5 md:px-6 md:py-[22px]">
           <div className="flex flex-wrap items-start gap-4">
             <div className="flex-1">
               <h2 className="text-base font-semibold">Incidents today</h2>
@@ -77,13 +78,13 @@ export default function OverviewPage() {
             </div>
           </div>
           <div className="flex items-stretch gap-2.5">
-            <div className="-mt-1.5 flex h-60 w-5 flex-col justify-between text-right font-mono text-[10.5px] text-graphite-300" aria-hidden="true">
+            <div className="-mt-1.5 flex h-44 w-5 flex-col justify-between text-right font-mono text-[10.5px] text-graphite-300 md:h-60" aria-hidden="true">
               <span>{top}</span><span>{top / 2}</span><span>0</span>
             </div>
             <div
               role="group"
               aria-label="Incidents per hour today"
-              className="relative flex h-60 flex-1 items-end gap-[2px] border-b border-t border-b-line-strong border-t-line-soft"
+              className="relative flex h-44 flex-1 items-end gap-[2px] border-b border-t border-b-line-strong border-t-line-soft md:h-60"
             >
               <span className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-line-soft" aria-hidden="true" />
               {trend.map((item, index) => {
@@ -100,7 +101,7 @@ export default function OverviewPage() {
                     {item.critical ? <span className={`w-[72%] max-w-[26px] motion-safe:transition-[height] motion-safe:duration-700 ${other ? "mt-[2px]" : "rounded-t-[3px]"}`} style={{ height: `${(item.critical / top) * 100}%`, background: SEVERITY.CRITICAL.bar }} /> : null}
                     <span className={`pointer-events-none absolute bottom-full z-10 mb-1.5 hidden whitespace-nowrap rounded bg-ink px-2 py-1 text-xs text-fog-100 shadow group-hover:block group-focus-visible:block ${index < 3 ? "left-0" : index > trend.length - 4 ? "right-0" : "left-1/2 -translate-x-1/2"}`}>
                       <span className="font-semibold text-white">{item.count}</span> at {item.hour}
-                      {item.critical ? <span className="text-brand-300"> · {item.critical} critical</span> : null}
+                      {item.critical ? <span className="text-danger-300"> · {item.critical} critical</span> : null}
                     </span>
                   </div>
                 );
@@ -119,15 +120,16 @@ export default function OverviewPage() {
           </p>
         </section>
 
-        <section className="panel flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2.5 px-[22px] pb-3.5 pt-5">
+        {/* Reviewing is the main job on a phone, so the queue comes before the chart there. */}
+        <section className="panel order-first flex flex-col overflow-hidden xl:order-none">
+          <div className="flex items-center gap-2.5 px-4 pb-3.5 pt-5 md:px-[22px]">
             <h2 className="flex-1 text-base font-semibold">Awaiting review</h2>
             <span className="text-xs text-graphite-500">{data?.new_incidents ?? 0} new</span>
             <Link href="/incidents?status=NEW" className="link text-[13px]">View all →</Link>
           </div>
-          {queue.length === 0 ? <p className="border-t border-line-soft px-[22px] py-4 text-[13px] text-graphite-500">Nothing waiting. Every alert has been reviewed.</p> : null}
+          {queue.length === 0 ? <p className="border-t border-line-soft px-4 py-4 text-[13px] text-graphite-500 md:px-[22px]">Nothing waiting. Every alert has been reviewed.</p> : null}
           {queue.map((item) => (
-            <button key={item.id} onClick={() => openIncident(item.id)} className="flex items-center gap-3.5 rounded-none border-t border-line-soft bg-transparent px-[22px] py-[11px] text-left text-graphite-800 hover:bg-subtle">
+            <button key={item.id} onClick={() => openIncident(item.id)} className="flex items-center gap-3 rounded-none border-t border-line-soft bg-transparent px-4 py-[11px] text-left text-graphite-800 hover:bg-subtle md:gap-3.5 md:px-[22px]">
               <span className="relative h-[42px] w-16 shrink-0 overflow-hidden rounded-md">
                 {item.snapshot_uri ? <Snapshot path={`/api/incidents/${item.id}/snapshot`} alt="" placeholder="" className="absolute inset-0 h-full w-full" /> : <span className="absolute inset-0 bg-stripes" />}
               </span>
@@ -144,7 +146,7 @@ export default function OverviewPage() {
         </section>
       </div>
 
-      <section className="panel flex flex-col gap-3.5 px-[22px] py-5">
+      <section className="panel flex flex-col gap-3.5 px-4 py-5 md:px-[22px]">
         <div className="flex items-center gap-2.5">
           <h2 className="flex-1 text-base font-semibold">Camera floor</h2>
           <Link href="/cameras" className="link text-[13px]">Manage →</Link>

@@ -1,56 +1,68 @@
 /** @type {import('tailwindcss').Config} */
-// Viettel IDC brand tokens, taken from viettelidc.com.vn (variable.css, styles.css, custom.css). Usage rules: docs/BRAND.md
+// Madison Technologies brand tokens, taken from madison-technologies.com (index CSS, logo, favicon). Usage rules: docs/BRAND.md
 module.exports = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // Viettel red (--red: #ee0033): primary buttons, active navigation, links, CRITICAL.
+        // Madison cyan (--lp-brand: #48c6fd): logo, primary buttons, active navigation. Too light for text on white; use 600/700 there.
         brand: {
-          50: "#FFF0F3",
-          100: "#FFDDE4",
-          200: "#FFB8C6",
-          300: "#FF7A93",
-          400: "#FF3D63",
-          500: "#EE0033",
-          600: "#D1002D",
-          700: "#AD0025",
-          800: "#87001D",
+          50: "#EBF8FF",
+          100: "#D4F1FF",
+          200: "#A9E4FE",
+          300: "#6DD4FF",
+          400: "#5DD0FF",
+          500: "#48C6FD",
+          600: "#006BB8",
+          700: "#005A99",
+          800: "#00467A",
         },
-        // Charcoal surfaces: dark cards, toasts, overlays on camera frames.
+        // Site destructive red (--destructive: #d4183d): CRITICAL, confirmed violations, errors, delete.
+        danger: {
+          50: "#FEF1F3",
+          100: "#FCDDE2",
+          200: "#F9B4C0",
+          300: "#F4899B",
+          400: "#EC4D67",
+          500: "#D4183D",
+          600: "#B3122F",
+          700: "#921028",
+          800: "#730C1F",
+        },
+        // Navy surfaces (--lp-bg-primary, --lp-bg-secondary): sidebar, dark cards, toasts, overlays on camera frames.
         ink: {
-          DEFAULT: "#23262A",
-          raised: "#2C3034",
-          edge: "#3B3F45",
-          field: "#4A4F56",
+          DEFAULT: "#0A1525",
+          raised: "#0D1F35",
+          edge: "#1E3350",
+          field: "#2B4466",
         },
-        paper: "#F4F5F7",
+        paper: "#F2F5F9",
         surface: "#FFFFFF",
-        subtle: "#F8F9FA",
-        muted: "#F2F3F5",
-        well: "#E9EBEE",
+        subtle: "#F7F9FC",
+        muted: "#EFF3F8",
+        well: "#E3E9F1",
         line: {
-          DEFAULT: "#E1E1E1",
-          soft: "#EEEEEE",
-          muted: "#E8E8E8",
-          strong: "#D2D4D7",
+          DEFAULT: "#E0E6EE",
+          soft: "#EDF1F6",
+          muted: "#E6EBF2",
+          strong: "#CBD5E1",
         },
-        // Text on light surfaces (900 --title, 800 --content, 700 --new-black).
+        // Text on light surfaces, slate tinted towards the navy; 900 is the navy itself.
         graphite: {
-          300: "#A5A9AE",
-          400: "#7D8288",
-          500: "#63686E",
-          600: "#4F5459",
-          700: "#44494D",
-          800: "#383838",
-          900: "#252525",
+          300: "#A0ABBB",
+          400: "#7A869A",
+          500: "#5A677B",
+          600: "#475569",
+          700: "#334155",
+          800: "#1F2A3C",
+          900: "#0A1525",
         },
-        // Text on charcoal surfaces.
+        // Text on navy surfaces.
         fog: {
-          50: "#F7F7F8",
-          100: "#E4E6E8",
-          300: "#B3B7BC",
-          500: "#8D9298",
+          50: "#F4F7FB",
+          100: "#E1E8F0",
+          300: "#AEBBCC",
+          500: "#8392A7",
         },
         success: {
           50: "#E8F7EE",
@@ -59,32 +71,35 @@ module.exports = {
           700: "#157A42",
           900: "#0E5530",
         },
-        // Site orange (#f78f24): HIGH severity, middling AI confidence.
+        // Orange: HIGH severity, middling AI confidence.
         warn: {
           50: "#FFF3E6",
           500: "#F78F24",
           700: "#9A4A00",
         },
-        // Site blue (--primary: #4199e4): NEW incidents, zones that moved with the camera.
+        // Indigo, well apart from the cyan: NEW incidents, zones that moved with the camera, the zone being drawn.
         info: {
-          50: "#EAF3FC",
-          500: "#4199E4",
-          700: "#1D5FA6",
+          50: "#EEF0FD",
+          500: "#4F5FE0",
+          700: "#3240B0",
         },
-        toggle: "#C9CCD0",
+        toggle: "#C5CED9",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "Segoe UI", "Helvetica Neue", "Arial", "sans-serif"],
-        display: ["var(--font-display)", "var(--font-sans)", "Segoe UI", "Arial", "sans-serif"],
+        // The site sets headings in the same face as body text, only heavier.
+        display: ["var(--font-sans)", "Segoe UI", "Arial", "sans-serif"],
         mono: ["var(--font-mono)", "Consolas", "monospace"],
       },
       backgroundImage: {
-        // Red light from the top-right corner of a charcoal card, as on the site's dark banners.
-        glow: "radial-gradient(120% 90% at 100% 0%, rgba(238,0,51,.30), transparent 60%)",
-        "brand-sweep": "linear-gradient(135deg, #FF1A4B 0%, #EE0033 45%, #AD0025 100%)",
+        // Cyan light from the top-right corner of a navy card, as behind the site's hero.
+        glow: "radial-gradient(120% 90% at 100% 0%, rgba(72,198,253,.20), transparent 60%)",
+        hero: "radial-gradient(70% 55% at 85% 20%, rgba(72,198,253,.28), transparent 70%), linear-gradient(160deg, #0D1F35 0%, #0A1525 55%, #0A0F14 100%)",
+        // The site's .section-gradient-text: the "MADISON" wordmark and highlighted words.
+        "brand-text": "linear-gradient(135deg, #5DD0FF 0%, #48C6FD 35%, #29B3F5 65%, #1AA0E8 100%)",
         dots: "radial-gradient(rgba(255,255,255,.22) 1px, transparent 1.4px)",
-        stripes: "repeating-linear-gradient(135deg, #2C3034 0 10px, #33373C 10px 20px)",
-        bars: "linear-gradient(180deg, #A9AEB4, #7D8288)",
+        stripes: "repeating-linear-gradient(135deg, #0D1F35 0 10px, #13283F 10px 20px)",
+        bars: "linear-gradient(180deg, #AEB9C7, #7F8DA1)",
       },
       keyframes: {
         "live-pulse": {

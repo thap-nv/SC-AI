@@ -79,13 +79,16 @@ export default function RulesPage() {
   }
 
   const label = "flex flex-col gap-1.5 text-[12.5px] text-fog-300";
+  const toggle = (rule: Rule) =>
+    admin ? <Switch size="sm" checked={rule.enabled} onChange={(next) => setEnabled(rule, next)} label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`} /> : <span className="text-xs text-graphite-500">{rule.enabled ? "On" : "Off"}</span>;
 
   return (
     <Shell title="Rules">
       {error ? <ErrorText>{error}</ErrorText> : null}
-      <div className="flex flex-wrap items-start gap-5">
+      {/* Side by side on a wide screen; stacked, the rules come first and the form after them. */}
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
         {admin ? (
-          <form onSubmit={create} className="panel-dark flex max-w-full flex-[1_1_280px] flex-col gap-3.5 p-[22px]">
+          <form onSubmit={create} className="panel-dark order-last flex flex-col gap-3.5 p-[22px] xl:order-none xl:w-[300px] xl:shrink-0">
             <h2 className="relative font-display text-lg font-bold text-white">New rule</h2>
             <label className={label}>Template
               <select className="field-dark" value={template} onChange={(e) => { setTemplate(e.target.value); setName(e.target.value); const next = TEMPLATES.find((item) => item.label === e.target.value); if (next) setSeconds(next.min_duration_s); }}>
@@ -112,10 +115,28 @@ export default function RulesPage() {
                     ? "Checked once per wash, when the hands leave the sink. Each step must be seen for the minimum time. Steps the model cannot recognise are never reported missing."
                     : "Only a clear “missing” result raises an alert. Unknown, such as a turned-away face or hidden feet, does not."}
             </p>
-            <button type="submit" className="bg-brand-500 py-3 font-bold text-white hover:bg-brand-600">Save rule</button>
+            <button type="submit" className="bg-brand-500 py-3 font-bold text-ink hover:bg-brand-300">Save rule</button>
           </form>
         ) : null}
-        <div className="panel min-w-0 flex-[999_1_620px] overflow-auto">
+        {/* Phone: one card per rule. */}
+        <ul className="panel divide-y divide-line-soft md:hidden">
+          {rules.map((rule) => (
+            <li key={rule.id} className={`flex items-start gap-3 px-4 py-3.5 ${rule.enabled ? "" : "opacity-45"}`}>
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <div className="text-sm font-semibold">{rule.name}</div>
+                <div className="text-[12.5px] text-graphite-500">{rule.camera_name} · {rule.zone_name}</div>
+                <div className="text-[12.5px] text-graphite-600">{eventLabel(rule.event_type)}</div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                  <SeverityTag severity={rule.severity} />
+                  <span className="font-mono text-[11.5px] text-graphite-600">{rule.min_duration_ms / 1000}s · cd {rule.cooldown_ms / 1000}s</span>
+                </div>
+              </div>
+              {toggle(rule)}
+            </li>
+          ))}
+          {rules.length === 0 ? <li className="px-4 py-6 text-sm text-graphite-500">No rules yet.</li> : null}
+        </ul>
+        <div className="panel hidden min-w-0 overflow-auto md:block xl:flex-1">
           <table className="min-w-[760px]">
             <thead><tr><th>Rule</th><th>Zone</th><th>Violation</th><th>Timing</th><th>Severity</th><th className="text-right">On</th></tr></thead>
             <tbody>
@@ -130,9 +151,7 @@ export default function RulesPage() {
                   <td className="whitespace-nowrap font-mono text-xs text-graphite-600">{rule.min_duration_ms / 1000}s · cd {rule.cooldown_ms / 1000}s</td>
                   <td><SeverityTag severity={rule.severity} /></td>
                   <td>
-                    <div className="flex justify-end">
-                      {admin ? <Switch size="sm" checked={rule.enabled} onChange={(next) => setEnabled(rule, next)} label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`} /> : <span className="text-xs text-graphite-500">{rule.enabled ? "On" : "Off"}</span>}
-                    </div>
+                    <div className="flex justify-end">{toggle(rule)}</div>
                   </td>
                 </tr>
               ))}

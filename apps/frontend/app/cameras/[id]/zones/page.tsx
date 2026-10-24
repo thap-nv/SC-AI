@@ -51,11 +51,22 @@ export default function ZonesPage() {
       });
   }, [params.id]);
 
+  // Redraw when the window resizes, since strokes and labels are sized from the canvas's displayed width.
+  const [viewport, setViewport] = useState(0);
+  useEffect(() => {
+    const resize = () => setViewport(window.innerWidth);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const width = 960;
     const height = 540;
+    // The canvas draws at 960 × 540 and is scaled to fit. k grows strokes, corners and labels by the same factor, so they
+    // read at the same size on a phone as on a wide screen.
+    const k = Math.max(1, width / (canvas.clientWidth || width));
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
@@ -64,13 +75,13 @@ export default function ZonesPage() {
     const fontFamily = getComputedStyle(canvas).fontFamily;
     if (image) ctx.drawImage(image, 0, 0, width, height);
     else {
-      ctx.fillStyle = "#2C3034";
+      ctx.fillStyle = "#0D1F35";
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#8D9298";
-      ctx.font = `14px ${fontFamily}`;
-      ctx.fillText("Waiting for a camera frame", 24, 32);
+      ctx.fillStyle = "#8392A7";
+      ctx.font = `${14 * k}px ${fontFamily}`;
+      ctx.fillText("Waiting for a camera frame", 24 * k, 32 * k);
     }
-    const draw = (poly: number[][], color: string, close: boolean, options: { dashed?: boolean; label?: string } = {}) => {
+    const draw = (poly: number[][], color: string, close: boolean, options: { dashed?: boolean; label?: string; labelText?: string } = {}) => {
       if (poly.length === 0) return;
       ctx.beginPath();
       poly.forEach(([x, y], index) => {
@@ -80,9 +91,9 @@ export default function ZonesPage() {
         else ctx.lineTo(px, py);
       });
       if (close) ctx.closePath();
-      ctx.setLineDash(options.dashed ? [8, 6] : []);
+      ctx.setLineDash(options.dashed ? [8 * k, 6 * k] : []);
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * k;
       ctx.stroke();
       ctx.setLineDash([]);
       if (close && !options.dashed) {
@@ -93,28 +104,28 @@ export default function ZonesPage() {
         poly.forEach(([x, y]) => {
           ctx.fillStyle = color;
           ctx.beginPath();
-          ctx.arc(x * width, y * height, 4, 0, Math.PI * 2);
+          ctx.arc(x * width, y * height, 4 * k, 0, Math.PI * 2);
           ctx.fill();
         });
       }
       if (options.label) {
         const [x, y] = poly[0];
-        ctx.font = `600 13px ${fontFamily}`;
+        ctx.font = `600 ${13 * k}px ${fontFamily}`;
         const textWidth = ctx.measureText(options.label).width;
-        const top = Math.max(0, y * height - 24);
+        const top = Math.max(0, y * height - 24 * k);
         ctx.fillStyle = color;
-        ctx.fillRect(x * width, top, textWidth + 10, 20);
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(options.label, x * width + 5, top + 14);
+        ctx.fillRect(x * width, top, textWidth + 10 * k, 20 * k);
+        ctx.fillStyle = options.labelText || "#ffffff";
+        ctx.fillText(options.label, x * width + 5 * k, top + 14 * k);
       }
     };
-    // Saved zones wear Viettel red (white label); the shape being drawn is blue so it never reads as saved.
+    // Saved zones wear Madison cyan (navy label, white would not read); the shape being drawn is indigo so it never reads as saved.
     zones.forEach((zone) => {
-      if (zone.id === editing?.id) draw(zone.polygon, "#7D8288", true, { dashed: true, label: `${zone.name} (current)` });
-      else draw(zone.polygon, "#EE0033", true, { label: zone.name });
+      if (zone.id === editing?.id) draw(zone.polygon, "#7A869A", true, { dashed: true, label: `${zone.name} (current)` });
+      else draw(zone.polygon, "#48C6FD", true, { label: zone.name, labelText: "#0A1525" });
     });
-    draw(points, "#2b7fc4", points.length > 2);
-  }, [image, zones, points, editing]);
+    draw(points, "#4F5FE0", points.length > 2);
+  }, [image, zones, points, editing, viewport]);
 
   function addPoint(event: React.MouseEvent<HTMLCanvasElement>) {
     if (!admin) return;
@@ -198,7 +209,7 @@ export default function ZonesPage() {
                 <p className="text-xs text-graphite-500">Draw around the sink, seen from a camera above it, where hands are washed. A wash starts when hands show up inside. Add the WHO hand-washing rule on the Rules page.</p>
               ) : null}
               <div className="text-xs text-graphite-500">
-                {points.length} points. Click the corners in order around the area. Any number of corners works.
+                {points.length} points. Click or tap the corners in order around the area. Any number of corners works.
                 {editing ? " The dashed outline is the current shape. Its rules and past incidents stay linked." : ""}
               </div>
               <div className="text-xs text-graphite-500">
@@ -232,7 +243,7 @@ export default function ZonesPage() {
                       {referenceId ? (
                         <button className="link p-0 text-xs" title="Use when the zone already matches this frame. Zones locked together form one view." onClick={() => lockToView(zone)}>Lock to this view</button>
                       ) : null}
-                      <button className="p-0 text-xs font-semibold text-brand-700 hover:text-brand-800" onClick={() => api(`/api/zones/${zone.id}`, { method: "DELETE" }).then(() => { if (zone.id === editing?.id) stopRedraw(); loadZones(); })}>Delete</button>
+                      <button className="p-0 text-xs font-semibold text-danger-700 hover:text-danger-800" onClick={() => api(`/api/zones/${zone.id}`, { method: "DELETE" }).then(() => { if (zone.id === editing?.id) stopRedraw(); loadZones(); })}>Delete</button>
                     </span>
                   ) : null}
                 </li>
