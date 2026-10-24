@@ -1,0 +1,19 @@
+# Eight classes, same ids the worker uses. Each item has one id for worn and one for missing.
+# The worker only raises an alert on a "no_" class. Without one, an item stays unknown.
+# Images and labels live in data/ppe-yolo. One txt per image, YOLO rows:
+# class_id cx cy width height, all normalised 0..1.
+# Box the item itself: the helmet, the vest or suit, each shoe, the mask.
+# For a missing item, box where it should be: the bare head, the torso, the foot, the face.
+# Relative to the shell's working directory. Train from the repo root.
+path: data/ppe-yolo
+train: images/train
+val: images/val
+names:
+  0: helmet
+  1: no_helmet
+  2: clothing
+  3: no_clothing
+  4: shoes
+  5: no_shoes
+  6: mask
+  7: no_mask

@@ -1,0 +1,17 @@
+{
+  "video": "sample-data/videos/handwash - correct.mp4",
+  "note": "The reference wash: the six Bo Y te / WHO steps in order. Labelled by eye from frames every 0.5 s. Changes between steps are left out.",
+  "crop": [0.22, 0.0, 0.82, 1.0],
+  "segments": [
+    [0.0, 0.3, "none"],
+    [0.5, 6.0, "other"],
+    [6.5, 12.0, "palms"],
+    [12.5, 16.8, "backs"],
+    [18.0, 21.5, "backs"],
+    [22.0, 27.0, "interlaced"],
+    [28.0, 32.5, "fingers"],
+    [34.0, 40.0, "thumbs"],
+    [41.0, 48.5, "fingertips"],
+    [49.0, 64.5, "other"]
+  ]
+}

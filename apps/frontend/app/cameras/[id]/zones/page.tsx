@@ -14,8 +14,8 @@ export default function ZonesPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [points, setPoints] = useState<number[][]>([]);
-  const [name, setName] = useState("Restricted Zone");
-  const [zoneType, setZoneType] = useState("RESTRICTED_AREA");
+  const [name, setName] = useState("PPE area");
+  const [zoneType, setZoneType] = useState("PPE_ZONE");
   const [editing, setEditing] = useState<Zone | null>(null);
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -134,8 +134,8 @@ export default function ZonesPage() {
 
   function stopRedraw() {
     setEditing(null);
-    setName("Restricted Zone");
-    setZoneType("RESTRICTED_AREA");
+    setName("PPE area");
+    setZoneType("PPE_ZONE");
     setPoints([]);
   }
 
@@ -188,8 +188,14 @@ export default function ZonesPage() {
                   {TYPES.map((type) => <option key={type} value={type}>{ZONE_LABELS[type]}</option>)}
                 </select>
               </label>
-              {zoneType === "GREEN_COFFEE_LINE" || zoneType === "ROASTED_COFFEE_LINE" || zoneType === "COFFEE_COUNT_LINE" ? (
-                <p className="text-xs text-graphite-500">Draw the belt. Each bean is counted once when it crosses the horizontal middle, moving down the frame. Green and roasted belts also grade defects. The count belt only totals quantity.</p>
+              {zoneType === "PPE_ZONE" ? (
+                <p className="text-xs text-graphite-500">Draw the floor where PPE is required. A person counts as inside where their feet are. Add the helmet, protective clothing and mask rules for this zone on the Rules page.</p>
+              ) : null}
+              {zoneType === "RESTRICTED_AREA" ? (
+                <p className="text-xs text-graphite-500">Draw the ground of the restricted area. People count as inside where their feet are, vehicles where their wheels are. Add the no-people and no-vehicles rules on the Rules page.</p>
+              ) : null}
+              {zoneType === "HANDWASH_STATION" ? (
+                <p className="text-xs text-graphite-500">Draw around the sink, seen from a camera above it, where hands are washed. A wash starts when hands show up inside. Add the WHO hand-washing rule on the Rules page.</p>
               ) : null}
               <div className="text-xs text-graphite-500">
                 {points.length} points. Click the corners in order around the area. Any number of corners works.

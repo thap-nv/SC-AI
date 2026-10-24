@@ -7,17 +7,31 @@ person leaves, after a short grace period for brief occlusion.
 
 from dataclasses import dataclass, field
 
+# Vehicles allowed where VEHICLE_INSIDE applies.
+ALLOWED_VEHICLES = {"forklift"}
+
+# Each PPE condition fails only on a clear NO for its item.
+PPE_CONDITIONS = {
+    "HELMET_MISSING": "helmet",
+    "CLOTHING_MISSING": "clothing",
+    "SHOES_MISSING": "shoes",
+    "MASK_MISSING": "mask",
+}
+
 
 @dataclass
 class Observation:
     track_id: str
     timestamp: float
     inside: bool
-    hairnet: str = "UNKNOWN"
-    uniform: str = "UNKNOWN"
+    ppe: dict[str, str] = field(default_factory=dict)
     confidence: float = 0.0
     bbox: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     class_name: str = "person"
+    # For a vehicle: car, truck, bus, motorcycle or forklift. Empty until its type is known.
+    vehicle_type: str = ""
+    # A person seen within a vehicle, such as its driver. The vehicle answers for them.
+    in_vehicle: bool = False
 
 
 @dataclass
@@ -63,14 +77,17 @@ class RuleEngine:
     _states: dict[tuple[str, str], _State] = field(default_factory=dict)
 
     def condition_met(self, rule: RuleConfig, obs: Observation) -> bool:
-        if obs.class_name != "person" or not obs.inside:
+        if not obs.inside:
+            return False
+        if rule.condition_type == "VEHICLE_INSIDE":
+            return obs.class_name == "vehicle" and bool(obs.vehicle_type) and obs.vehicle_type not in ALLOWED_VEHICLES
+        if obs.class_name != "person":
             return False
         if rule.condition_type == "PERSON_INSIDE":
-            return True
-        if rule.condition_type == "HAIRNET_MISSING":
-            return obs.hairnet == "NO"
-        if rule.condition_type == "UNIFORM_INCORRECT":
-            return obs.uniform == "INCORRECT"
+            return not obs.in_vehicle
+        item = PPE_CONDITIONS.get(rule.condition_type)
+        if item is not None:
+            return obs.ppe.get(item) == "NO"
         return False
 
     def update(self, rule: RuleConfig, obs: Observation) -> list[Action]:

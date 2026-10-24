@@ -52,7 +52,7 @@ export default function LoginPage() {
       <div className="grid place-items-center px-4 py-10">
         <form onSubmit={submit} className="panel w-full max-w-md border-t-[3px] border-t-brand-500 p-8 shadow-[0_10px_28px_rgba(37,37,37,.08)]">
           <Logo className="mb-6 h-9 w-auto text-graphite-900 lg:hidden" />
-          <div className="eyebrow text-brand-600">Coffee factory POC</div>
+          <div className="eyebrow text-brand-600">Factory & workshop POC</div>
           <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-graphite-900">AI Safety & Compliance Monitoring</h1>
           <p className="mt-2 text-sm text-graphite-600">Sign in to review cameras, zones, and safety alerts.</p>
           <div className="mt-6 space-y-3">

@@ -24,16 +24,15 @@ def test_health_and_seed_login():
         cameras = api.get("/api/cameras", headers=headers)
         assert cameras.status_code == 200
         codes = {item["code"] for item in cameras.json()}
-        assert codes == {"CAM-PACK-01", "CAM-PROD-01", "CAM-MACHINE-01", "CAM-WAREHOUSE-01", "CAM-BEAN-01"}
+        assert codes == {"CAM-WORKSHOP-01", "CAM-RESTRICTED-01", "CAM-HANDWASH-01"}
         rules = api.get("/api/rules", headers=headers).json()
         assert {item["event_type"] for item in rules} == {
-            "HAIRNET_VIOLATION",
-            "UNIFORM_VIOLATION",
-            "MACHINE_DANGER_ZONE_INTRUSION",
+            "HELMET_VIOLATION",
+            "CLOTHING_VIOLATION",
+            "MASK_VIOLATION",
             "RESTRICTED_AREA_INTRUSION",
-            "PEDESTRIAN_IN_FORKLIFT_ZONE",
-            "GREEN_COFFEE_DEFECT_RATE",
-            "ROASTED_COFFEE_DEFECT_RATE",
+            "VEHICLE_IN_RESTRICTED_AREA",
+            "HANDWASH_INCOMPLETE",
         }
         assert api.get("/api/incidents", headers=headers).json()["total"] >= 9
 
@@ -44,7 +43,7 @@ def test_viewer_cannot_configure_and_safety_can_review():
         denied = api.post(
             "/api/cameras",
             headers=viewer,
-            json={"code": "CAM-X", "name": "Extra", "area": "Packing Area", "stream_type": "FILE"},
+            json={"code": "CAM-X", "name": "Extra", "area": "Workshop", "stream_type": "FILE"},
         )
         assert denied.status_code == 403
         safety = auth(api, "safety", "safety123")
@@ -57,29 +56,29 @@ def test_viewer_cannot_configure_and_safety_can_review():
         assert again.status_code == 409
 
 
-def test_green_bean_incident_is_reviewable_and_live_returns_coffee(monkeypatch):
+def test_helmet_incident_is_reviewable_and_live_returns_ppe(monkeypatch):
     stored: dict[str, dict] = {}
     monkeypatch.setattr("app.routers.internal.write_live", lambda camera_id, payload: stored.__setitem__(camera_id, payload))
     monkeypatch.setattr("app.routers.catalog.read_live", lambda camera_id: stored.get(camera_id))
     with client() as api:
         headers = auth(api, "admin", "admin123")
         cameras = api.get("/api/internal/cameras", headers={"X-Internal-Token": "test-internal"}).json()
-        bean = next(item for item in cameras if item["code"] == "CAM-BEAN-01")
-        rule = next(item for item in bean["rules"] if item["event_type"] == "GREEN_COFFEE_DEFECT_RATE")
+        workshop = next(item for item in cameras if item["code"] == "CAM-WORKSHOP-01")
+        rule = next(item for item in workshop["rules"] if item["condition_type"] == "HELMET_MISSING")
         opened = api.post(
             "/api/internal/incidents",
             headers={"X-Internal-Token": "test-internal"},
             json={
-                "factory_id": bean["factory_id"],
-                "camera_id": bean["id"],
+                "factory_id": workshop["factory_id"],
+                "camera_id": workshop["id"],
                 "zone_id": rule["zone_id"],
                 "rule_id": rule["id"],
-                "event_type": "GREEN_COFFEE_DEFECT_RATE",
+                "event_type": "HELMET_VIOLATION",
                 "severity": "HIGH",
-                "track_id": f"line-{rule['zone_id']}",
-                "confidence": 0.75,
+                "track_id": "17",
+                "confidence": 0.84,
                 "started_at": "2026-10-13T01:00:00Z",
-                "model_name": "coffee-line",
+                "model_name": "ppe-detector",
                 "model_version": "v0-demo",
                 "ai_mode": "DEMO",
             },
@@ -88,50 +87,43 @@ def test_green_bean_incident_is_reviewable_and_live_returns_coffee(monkeypatch):
         body = opened.json()
         assert body["reason"] == "created"
         safety = auth(api, "safety", "safety123")
-        confirmed = api.post(f"/api/incidents/{body['id']}/confirm", headers=safety, json={"comment": "Defect rate checked"})
+        confirmed = api.post(f"/api/incidents/{body['id']}/confirm", headers=safety, json={"comment": "No helmet near the press"})
         assert confirmed.status_code == 200, confirmed.text
         assert confirmed.json()["status"] == "CONFIRMED"
-        assert confirmed.json()["event_type"] == "GREEN_COFFEE_DEFECT_RATE"
+        assert confirmed.json()["event_type"] == "HELMET_VIOLATION"
+        ppe = {"helmet": "NO", "clothing": "YES", "shoes": "YES", "mask": "UNKNOWN"}
+        checks = [{"text": "Helmet: No", "state": "violation"}, {"text": "Mask: Unknown", "state": "unknown"}]
         beat = api.post(
-            f"/api/internal/cameras/{bean['id']}/heartbeat",
+            f"/api/internal/cameras/{workshop['id']}/heartbeat",
             headers={"X-Internal-Token": "test-internal"},
             json={
                 "status": "ONLINE",
                 "ai_mode": "DEMO",
-                "coffee": [
-                    {
-                        "zone_id": rule["zone_id"],
-                        "name": "Green coffee belt",
-                        "stage": "green",
-                        "total": 8,
-                        "window_total": 8,
-                        "defects": 6,
-                        "defect_rate": 0.75,
-                        "by_class": {"black": 2, "good": 2},
-                        "in_frame": 1,
-                    },
-                    {
-                        "zone_id": "count-belt",
-                        "name": "Coffee count belt",
-                        "stage": "count",
-                        "total": 4,
-                        "window_total": 4,
-                        "defects": 0,
-                        "defect_rate": 0,
-                        "by_class": {"bean": 4},
-                        "in_frame": 1,
-                    },
-                ],
+                "tracks": [{"track_id": "17", "bbox": [0.1, 0.4, 0.18, 0.8], "class_name": "person", "confidence": 0.9, "ppe": ppe, "checks": checks}],
             },
         )
         assert beat.status_code == 200, beat.text
-        live = api.get(f"/api/cameras/{bean['id']}/live", headers=headers)
+        live = api.get(f"/api/cameras/{workshop['id']}/live", headers=headers)
         assert live.status_code == 200, live.text
-        coffee = live.json()["coffee"]
-        assert [line["stage"] for line in coffee] == ["green", "count"]
-        assert coffee[0]["defect_rate"] == 0.75
-        assert coffee[1]["total"] == 4
-        assert coffee[1]["defect_rate"] == 0
+        assert "coffee" not in live.json()
+        track = live.json()["tracks"][0]
+        assert track["ppe"] == ppe
+        assert track["checks"] == checks
+
+
+def test_ppe_rule_can_be_added_and_old_coffee_types_are_rejected():
+    with client() as api:
+        headers = auth(api, "admin", "admin123")
+        zone = next(item for item in api.get("/api/zones", headers=headers).json() if item["zone_type"] == "PPE_ZONE")
+        rule = {"zone_id": zone["id"], "name": "Mask at the paint booth", "event_type": "MASK_VIOLATION", "condition_type": "MASK_MISSING", "min_duration_ms": 2000, "cooldown_ms": 30000, "severity": "MEDIUM"}
+        created = api.post("/api/rules", headers=headers, json=rule)
+        assert created.status_code == 200, created.text
+        assert created.json()["condition_type"] == "MASK_MISSING"
+        assert api.delete(f"/api/rules/{created.json()['id']}", headers=headers).status_code == 200
+        hairnet = api.post("/api/rules", headers=headers, json={**rule, "event_type": "HAIRNET_VIOLATION", "condition_type": "HAIRNET_MISSING"})
+        assert hairnet.status_code == 400
+        belt = api.post("/api/zones", headers=headers, json={"camera_id": zone["camera_id"], "name": "Belt", "zone_type": "GREEN_COFFEE_LINE", "polygon": [[0.1, 0.1], [0.5, 0.1], [0.5, 0.5]]})
+        assert belt.status_code == 400
 
 
 def test_worker_token_and_masking():
@@ -140,12 +132,15 @@ def test_worker_token_and_masking():
         assert denied.status_code == 401
         allowed = api.get("/api/internal/cameras", headers={"X-Internal-Token": "test-internal"})
         assert allowed.status_code == 200
-        assert len(allowed.json()) == 5
-        bean = next(item for item in allowed.json() if item["code"] == "CAM-BEAN-01")
-        assert {zone["zone_type"] for zone in bean["zones"]} == {"GREEN_COFFEE_LINE", "ROASTED_COFFEE_LINE", "COFFEE_COUNT_LINE"}
-        defect_rules = [rule for rule in bean["rules"] if rule["condition_type"] == "DEFECT_RATE"]
-        assert {rule["event_type"] for rule in defect_rules} == {"GREEN_COFFEE_DEFECT_RATE", "ROASTED_COFFEE_DEFECT_RATE"}
-        assert all(rule["extensions"]["max_defect_rate"] == 0.15 and rule["extensions"]["window"] == 8 for rule in defect_rules)
+        assert len(allowed.json()) == 3
+        workshop = next(item for item in allowed.json() if item["code"] == "CAM-WORKSHOP-01")
+        lane = next(item for item in allowed.json() if item["code"] == "CAM-RESTRICTED-01")
+        assert {rule["condition_type"] for rule in lane["rules"]} == {"PERSON_INSIDE", "VEHICLE_INSIDE"}
+        assert [zone["zone_type"] for zone in workshop["zones"]] == ["PPE_ZONE"]
+        assert {rule["condition_type"] for rule in workshop["rules"]} == {"HELMET_MISSING", "CLOTHING_MISSING", "MASK_MISSING"}
+        sink = next(item for item in allowed.json() if item["code"] == "CAM-HANDWASH-01")
+        assert [zone["zone_type"] for zone in sink["zones"]] == ["HANDWASH_STATION"]
+        assert [(rule["condition_type"], rule["min_duration_ms"]) for rule in sink["rules"]] == [("HANDWASH_STEPS_MISSING", 3000)]
     assert mask_stream_url("rtsp://operator:s3cret@10.0.0.5/live") == "rtsp://operator:***@10.0.0.5/live"
     assert "s3cret" not in mask_stream_url("rtsp://operator:s3cret@10.0.0.5/live")
 
@@ -153,7 +148,7 @@ def test_worker_token_and_masking():
 def test_camera_ai_fps_saves_25_and_rejects_31():
     with client() as api:
         headers = auth(api, "admin", "admin123")
-        camera = api.get("/api/cameras", headers=headers).json()[0]
+        camera = next(item for item in api.get("/api/cameras", headers=headers).json() if item["code"] == "CAM-WORKSHOP-01")
         assert camera["ai_fps"] == 25
         lowered = api.patch(f"/api/cameras/{camera['id']}", headers=headers, json={"ai_fps": 8})
         assert lowered.status_code == 200, lowered.text
@@ -195,7 +190,7 @@ def test_polygon_takes_any_number_of_corners_but_no_crossing_edges():
 def test_admin_redraws_a_zone_in_place_and_its_rules_stay():
     with client() as api:
         headers = auth(api, "admin", "admin123")
-        rule = next(item for item in api.get("/api/rules", headers=headers).json() if item["event_type"] == "RESTRICTED_AREA_INTRUSION")
+        rule = next(item for item in api.get("/api/rules", headers=headers).json() if item["event_type"] == "HELMET_VIOLATION")
         shape = [[0.5, 0.4], [0.7, 0.38], [0.8, 0.5], [0.72, 0.62], [0.55, 0.6], [0.48, 0.5]]
         redrawn = api.patch(f"/api/zones/{rule['zone_id']}", headers=headers, json={"polygon": shape})
         assert redrawn.status_code == 200, redrawn.text
@@ -219,7 +214,7 @@ def test_zone_keeps_the_frame_it_was_drawn_on(monkeypatch):
     monkeypatch.setattr(catalog, "put_bytes", lambda key, data, content_type: objects.__setitem__(key, data))
     with client() as api:
         headers = auth(api, "admin", "admin123")
-        camera = next(item for item in api.get("/api/cameras", headers=headers).json() if item["code"] == "CAM-WAREHOUSE-01")
+        camera = next(item for item in api.get("/api/cameras", headers=headers).json() if item["code"] == "CAM-WORKSHOP-01")
         frames = f"/api/cameras/{camera['id']}/reference-frames"
         assert api.post(frames, headers=headers).status_code == 404
         objects[f"cameras/{camera['id']}/latest_raw.jpg"] = b"frame drawn on"
@@ -246,7 +241,7 @@ def test_zone_keeps_the_frame_it_was_drawn_on(monkeypatch):
 def test_multi_view_is_off_by_default_and_reaches_the_worker():
     with client() as api:
         headers = auth(api, "admin", "admin123")
-        camera = next(item for item in api.get("/api/cameras", headers=headers).json() if item["code"] == "CAM-WAREHOUSE-01")
+        camera = next(item for item in api.get("/api/cameras", headers=headers).json() if item["code"] == "CAM-WORKSHOP-01")
         assert camera["multi_view"] is False
         updated = api.patch(f"/api/cameras/{camera['id']}", headers=headers, json={"multi_view": True})
         assert updated.status_code == 200 and updated.json()["multi_view"] is True
@@ -274,3 +269,33 @@ def test_overview_splits_the_trend_by_severity_and_names_the_peak():
             assert data["peak"] is None
         report = api.get("/api/system/evaluation", headers=headers).json()
         assert set(report["by_event_severity"]) == set(report["by_event_type"])
+
+
+def test_a_new_video_or_stream_unlinks_zones_from_the_old_view(monkeypatch):
+    from app.routers import catalog
+
+    objects: dict[str, bytes] = {}
+    monkeypatch.setattr(catalog, "get_bytes", lambda key: objects.get(key))
+    monkeypatch.setattr(catalog, "put_bytes", lambda key, data, content_type: objects.__setitem__(key, data))
+    with client() as api:
+        headers = auth(api, "admin", "admin123")
+        camera = next(item for item in api.get("/api/cameras", headers=headers).json() if item["code"] == "CAM-WORKSHOP-01")
+        objects[f"cameras/{camera['id']}/latest_raw.jpg"] = b"old video frame"
+        frozen = api.post(f"/api/cameras/{camera['id']}/reference-frames", headers=headers).json()["id"]
+        shape = [[0.1, 0.6], [0.4, 0.6], [0.4, 0.9], [0.1, 0.9]]
+        zone = api.post("/api/zones", headers=headers, json={"camera_id": camera["id"], "name": "Bench", "zone_type": "PPE_ZONE", "polygon": shape, "reference_id": frozen}).json()
+        linked = lambda: next(item for item in api.get(f"/api/zones?camera_id={camera['id']}", headers=headers).json() if item["id"] == zone["id"])["reference_key"]
+        relink = lambda: api.patch(f"/api/zones/{zone['id']}", headers=headers, json={"reference_id": frozen})
+
+        api.patch(f"/api/cameras/{camera['id']}", headers=headers, json={"stream_url": camera["stream_url"] or "", "ai_fps": 20})
+        assert linked() is not None, "saving the same source keeps the link"
+        api.patch(f"/api/cameras/{camera['id']}", headers=headers, json={"stream_type": "RTSP", "stream_url": "rtsp://10.0.0.9/live"})
+        assert linked() is None
+        relink()
+        uploaded = api.post(f"/api/cameras/{camera['id']}/video", headers=headers, files={"file": ("new.mp4", b"\x00\x00", "video/mp4")})
+        assert uploaded.status_code == 200, uploaded.text
+        assert linked() is None
+        zones = api.get(f"/api/zones?camera_id={camera['id']}", headers=headers).json()
+        assert next(item for item in zones if item["id"] == zone["id"])["polygon"] == shape, "the zone stays where it was drawn"
+        api.delete(f"/api/zones/{zone['id']}", headers=headers)
+        api.patch(f"/api/cameras/{camera['id']}", headers=headers, json={"stream_type": "FILE", "stream_url": "", "ai_fps": 25})

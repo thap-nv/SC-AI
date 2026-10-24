@@ -1,18 +1,42 @@
 """Model adapters.
 
 DEMO_MODE uses scripted detections so the workflow can be shown without weights.
-REAL_AI_MODE uses an installed ONNX person detector, with HOG as the fallback.
+REAL_AI_MODE uses an installed ONNX detector for people and vehicles, with HOG (people only) as the fallback.
+Every detection is a person or a vehicle. A vehicle carries a vehicle_type: car, truck, bus, motorcycle or forklift.
+Hand-washing gestures are a separate detector, run only on cameras with a hand-wash rule.
 """
 
+import ast
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from app.scenes import scripted_objects
+from app.scenes import WASH_STEPS, scripted_objects, scripted_wash
 
 PERSON_CLASS = 0
-FORKLIFT_CLASS = 1
+VEHICLE_CLASS = 2
+# COCO ids the official YOLOX models detect, other than person. There is no forklift class: forklifts come out as trucks.
+COCO_VEHICLES = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+
+PPE_ITEMS = ("helmet", "clothing", "shoes", "mask")
+# ppe.onnx class ids. Each item has one id for worn and one for missing.
+PPE_CLASSES = {
+    0: ("helmet", "YES"),
+    1: ("helmet", "NO"),
+    2: ("clothing", "YES"),
+    3: ("clothing", "NO"),
+    4: ("shoes", "YES"),
+    5: ("shoes", "NO"),
+    6: ("mask", "YES"),
+    7: ("mask", "NO"),
+}
+# Where on the person box each item is looked for, as fractions of its height from the top.
+PPE_BANDS = {"helmet": (0.0, 0.25), "mask": (0.05, 0.35), "clothing": (0.15, 0.80), "shoes": (0.75, 1.0)}
+
+
+def unknown_ppe() -> dict[str, tuple[str, float]]:
+    return {item: ("UNKNOWN", 0.0) for item in PPE_ITEMS}
 
 
 def _box(nx: float, ny: float, width: int, height: int, bw: float, bh: float) -> list[float]:
@@ -29,14 +53,16 @@ class DemoDetector:
         height, width = frame.shape[:2]
         detections = []
         for item in scripted_objects(zones, now, hold_inside):
-            forklift = item["class_name"] == "forklift"
+            vehicle = item["class_name"] == "vehicle"
+            size = {"forklift": (0.14, 0.16), "car": (0.16, 0.12)}.get(item.get("vehicle_type"), (0.08, 0.24))
             detections.append(
                 {
                     "class_name": item["class_name"],
-                    "class_id": FORKLIFT_CLASS if forklift else PERSON_CLASS,
-                    "confidence": 0.93 if forklift else 0.9,
-                    "bbox_xyxy": _box(item["nx"], item["ny"], width, height, 0.14 if forklift else 0.08, 0.16 if forklift else 0.24),
-                    "ppe_mode": item["ppe_mode"],
+                    "class_id": VEHICLE_CLASS if vehicle else PERSON_CLASS,
+                    "confidence": 0.93 if vehicle else 0.9,
+                    "bbox_xyxy": _box(item["nx"], item["ny"], width, height, *size),
+                    "outfit": item.get("outfit"),
+                    "vehicle_type": item.get("vehicle_type"),
                 }
             )
         return detections
@@ -62,25 +88,16 @@ class HogPersonDetector:
                     "class_id": PERSON_CLASS,
                     "confidence": float(min(0.99, max(0.35, weight))),
                     "bbox_xyxy": box,
-                    "ppe_mode": "model",
                 }
             )
         return detections
-
-
-class FactoryPersonDetector:
-    """A worker is a light hairnet, or a patch of hair, directly above a face and a uniform."""
-
-    def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[dict]:
-        del zones, now, hold_inside
-        return _nms(_people_from_heads(frame), 0.35)
 
 
 class OnnxObjectDetector:
     """ONNX contract: one output tensor of shape Nx6 or 1xNx6.
 
     Columns are x1, y1, x2, y2, score, class_id in the model's input pixel space.
-    class_id 0 is person and class_id 1 is forklift.
+    class_id 0 is person and class_id 1 is forklift, reported as a vehicle of type forklift.
     """
 
     def __init__(self, path: str, providers: list[str], threads: int = 2):
@@ -108,265 +125,433 @@ class OnnxObjectDetector:
             if score < 0.35:
                 continue
             class_id = int(row[5])
-            name = {0: "person", 1: "forklift"}.get(class_id)
-            if name is None:
+            if class_id not in (0, 1):
                 continue
             detections.append(
                 {
-                    "class_name": name,
-                    "class_id": class_id,
+                    "class_name": "person" if class_id == 0 else "vehicle",
+                    "class_id": PERSON_CLASS if class_id == 0 else VEHICLE_CLASS,
                     "confidence": score,
                     "bbox_xyxy": [float(row[0]) * sx, float(row[1]) * sy, float(row[2]) * sx, float(row[3]) * sy],
-                    "ppe_mode": "model",
+                    "vehicle_type": None if class_id == 0 else "forklift",
                 }
             )
         return detections
 
 
 class DemoPPEClassifier:
-    def classify(self, crop, context: dict | None = None) -> dict:
+    """Returns the outfit the scripted scene gave the person. The pixels are not read."""
+
+    def classify(self, crop, context: dict | None = None) -> dict[str, tuple[str, float]]:
         del crop
-        context = context or {}
-        if context.get("ppe_mode") == "unknown":
-            return {"hairnet": "UNKNOWN", "uniform": "UNKNOWN", "confidence": 0.41}
-        zone_types = context.get("zone_types") or []
-        hairnet = "NO" if "PACKING_ZONE" in zone_types else "YES"
-        uniform = "INCORRECT" if "PRODUCTION_ZONE" in zone_types else "CORRECT"
-        confidence = 0.84 if hairnet == "NO" or uniform == "INCORRECT" else 0.9
-        return {"hairnet": hairnet, "uniform": uniform, "confidence": confidence}
+        outfit = (context or {}).get("outfit") or {}
+        result = unknown_ppe()
+        for item in PPE_ITEMS:
+            state = outfit.get(item, "UNKNOWN")
+            if state in {"YES", "NO"}:
+                result[item] = (state, 0.9 if state == "YES" else 0.84)
+        return result
 
 
 class UnknownPPEClassifier:
-    def classify(self, crop, context: dict | None = None) -> dict:
+    def classify(self, crop, context: dict | None = None) -> dict[str, tuple[str, float]]:
         del crop, context
-        return {"hairnet": "UNKNOWN", "uniform": "UNKNOWN", "confidence": 0.0}
+        return unknown_ppe()
+
+
+# Bands of a standing person's box, as fractions of its height from the top, for a raised CCTV view.
+HEAD_BAND = (0.0, 0.06)
+TORSO_BAND = (0.18, 0.48)
+LEGS_BAND = (0.55, 0.88)
+
+
+class FaceFinder:
+    """YuNet face detector from the OpenCV Zoo (MIT). Finds a person's face with eye, nose and mouth points.
+
+    It runs on the head region of the person box, enlarged so a CCTV-sized face is big enough to find.
+    A face turned away is not found, and then helmet and mask fall back or stay UNKNOWN.
+    """
+
+    HEAD_SIDE = 160
+
+    def __init__(self, path: str):
+        self.detector = cv2.FaceDetectorYN.create(str(path), "", (self.HEAD_SIDE, self.HEAD_SIDE), 0.5, 0.3, 5)
+
+    def find(self, frame: np.ndarray, box: list[float]) -> dict | None:
+        x1, y1, x2, y2 = box
+        width, height = x2 - x1, y2 - y1
+        left, right = max(0, int(x1 - 0.1 * width)), min(frame.shape[1], int(x2 + 0.1 * width))
+        top, bottom = max(0, int(y1 - 0.03 * height)), min(frame.shape[0], int(y1 + 0.28 * height))
+        head = frame[top:bottom, left:right]
+        if head.shape[0] < 12 or head.shape[1] < 12:
+            return None
+        scale = self.HEAD_SIDE / max(head.shape[:2])
+        image = cv2.resize(head, (max(1, round(head.shape[1] * scale)), max(1, round(head.shape[0] * scale))), interpolation=cv2.INTER_CUBIC)
+        self.detector.setInputSize((image.shape[1], image.shape[0]))
+        _, faces = self.detector.detect(image)
+        if faces is None:
+            return None
+        # Another worker's face can sit in the margin. Keep faces centred inside this person's box.
+        inside = [face for face in faces if (x1 - left) * scale <= face[0] + face[2] / 2 <= (x2 - left) * scale]
+        if not inside:
+            return None
+        best = max(inside, key=lambda face: face[14])
+        return {"image": image, "box": [float(v) for v in best[:4]], "points": best[4:14].reshape(5, 2).astype(float), "score": float(best[14])}
 
 
 class ColorPPEClassifier:
-    """Reads the head and torso of a person crop.
+    """Fallback when ppe.onnx is missing. It reads colours, so it only suits POC testing on a clear view.
 
-    A light or blue cap is a hairnet. Dark or brown hair with no cap is missing.
-    A beige, white, or blue work shirt is a correct uniform. A strong red or pink
-    shirt is incorrect. Anything unclear stays UNKNOWN.
+    Helmet: a white, yellow, orange or red hard hat just above the face, or on top of the box when the
+    person faces away. Dark hair or bare skin there is none.
+    Clothing: a coverall. Grey, beige, white or blue workwear on the torso that carries on down the legs.
+    A brightly coloured top, or a work-coloured top over dark trousers, is not one.
+    Mask: needs a face. With mask.onnx a trained classifier reads it, which also catches a mask pulled
+    under the chin and bare faces seen side on. Without it, skin over the chin that matches the
+    forehead on a face turned to the camera is no mask.
+    Shoes cannot be judged by colour and stay UNKNOWN.
     """
 
-    def classify(self, crop, context: dict | None = None) -> dict:
-        del context
-        if crop is None or getattr(crop, "size", 0) == 0 or crop.shape[0] < 72 or crop.shape[1] < 28:
-            return {"hairnet": "UNKNOWN", "uniform": "UNKNOWN", "confidence": 0.0}
-        height, width = crop.shape[:2]
+    def __init__(self, faces: FaceFinder | None = None, masks: "MaskClassifier | None" = None):
+        self.faces = faces
+        self.masks = masks
+
+    def classify(self, crop, context: dict | None = None) -> dict[str, tuple[str, float]]:
+        context = context or {}
+        result = unknown_ppe()
+        if crop is None or getattr(crop, "size", 0) == 0 or crop.shape[0] < 100 or crop.shape[1] < 30:
+            return result
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-        top = crop[: max(6, int(height * 0.12))]
-        head = top[:, int(top.shape[1] * 0.30) : int(top.shape[1] * 0.70)]
-        torso = hsv[int(height * 0.30) : int(height * 0.70), int(width * 0.22) : int(width * 0.78)]
-        hairnet, hairnet_confidence = _hairnet_from_head(head)
-        uniform, uniform_confidence = _uniform_from_torso(torso)
-        return {
-            "hairnet": hairnet,
-            "uniform": uniform,
-            "confidence": round(max(hairnet_confidence, uniform_confidence), 3),
-        }
+        face = None
+        if self.faces is not None and context.get("frame") is not None and context.get("box") is not None:
+            face = self.faces.find(context["frame"], context["box"])
+        if face is not None:
+            result["helmet"] = _helmet_above_face(face)
+            result["mask"] = self.masks.judge(face) if self.masks is not None else _mask_on_face(face)
+        else:
+            result["helmet"] = _helmet_from_head(_band(hsv, HEAD_BAND, 0.25, 0.75))
+        legs_visible = crop.shape[0] >= 2.0 * crop.shape[1]
+        result["clothing"] = _clothing_from_body(crop, hsv, legs_visible)
+        return result
 
 
-def _cap_patch(top: np.ndarray) -> np.ndarray:
-    if top.size == 0:
-        return top
-    hsv = cv2.cvtColor(top, cv2.COLOR_BGR2HSV)
+class MaskClassifier:
+    """mask.onnx: MobileNetV3-Small trained on face crops by tools/mask_classifier/train_mask.py.
+
+    Input 1x3x96x96 RGB, ImageNet-normalised. Logits for: mask worn incorrectly, mask worn, no mask.
+    Worn incorrectly, such as under the chin or below the nose, counts as NO. Under the confidence
+    floor the face stays UNKNOWN. A floor of 0.7 was the lowest with no wrong alert on four test clips:
+    at 0.6 two masked workers looking down were flagged.
+    """
+
+    SIZE = 96
+    MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+    def __init__(self, path: str, providers: list[str], threads: int = 1, floor: float = 0.7):
+        self.session = onnx_session(path, providers, threads)
+        self.input_name = self.session.get_inputs()[0].name
+        self.floor = floor
+
+    def judge(self, face: dict) -> tuple[str, float]:
+        crop = face_crop(face, self.SIZE)
+        rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        tensor = ((rgb - self.MEAN) / self.STD).transpose(2, 0, 1)[None]
+        incorrect, worn, bare = _softmax(np.asarray(self.session.run(None, {self.input_name: tensor})[0]).reshape(-1)[:3])
+        if worn >= self.floor:
+            return "YES", round(float(worn), 3)
+        if incorrect + bare >= self.floor:
+            return "NO", round(float(incorrect + bare), 3)
+        return "UNKNOWN", 0.0
+
+
+def face_crop(face: dict, size: int) -> np.ndarray:
+    """The face box with some forehead and chin around it, padded square, as the classifier was trained."""
+    image = face["image"]
+    x, y, width, height = face["box"]
+    x1, y1 = int(max(0, x - 0.15 * width)), int(max(0, y - 0.2 * height))
+    x2, y2 = int(min(image.shape[1], x + 1.15 * width)), int(min(image.shape[0], y + 1.15 * height))
+    crop = image[y1:y2, x1:x2]
+    side = max(crop.shape[:2])
+    canvas = np.full((side, side, 3), 127, dtype=np.uint8)
+    top, left = (side - crop.shape[0]) // 2, (side - crop.shape[1]) // 2
+    canvas[top : top + crop.shape[0], left : left + crop.shape[1]] = crop
+    return cv2.resize(canvas, (size, size), interpolation=cv2.INTER_AREA)
+
+
+def _softmax(values: np.ndarray) -> np.ndarray:
+    shifted = np.exp(values - values.max())
+    return shifted / shifted.sum()
+
+
+def _band(image: np.ndarray, rows: tuple[float, float], left: float = 0.2, right: float = 0.8) -> np.ndarray:
+    height, width = image.shape[:2]
+    top, bottom = int(height * rows[0]), max(int(height * rows[0]) + 1, int(height * rows[1]))
+    x1, x2 = int(width * left), max(int(width * left) + 1, int(width * right))
+    return image[top:bottom, x1:x2]
+
+
+def _skin(hsv: np.ndarray) -> np.ndarray:
     hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
-    skin = (hue > 3) & (hue < 25) & (sat > 30) & (sat < 170) & (val > 120)
-    bright = (sat < 75) & (val > 140) & ~skin
-    columns = np.where(bright.any(axis=0))[0]
-    if len(columns) < 4:
-        return top
-    groups = []
-    start = previous = int(columns[0])
-    for column in columns[1:]:
-        column = int(column)
-        if column > previous + 4:
-            groups.append((start, previous))
-            start = column
-        previous = column
-    groups.append((start, previous))
-    best_start, best_end = max(groups, key=lambda group: int(bright[:, group[0] : group[1] + 1].sum()))
-    return top[:, best_start : best_end + 1]
+    return (hue <= 20) & (sat >= 40) & (sat <= 160) & (val >= 60)
 
 
-def _hairnet_from_head(head: np.ndarray) -> tuple[str, float]:
+def _hard_hat(hsv: np.ndarray) -> np.ndarray:
+    # Blue is left out: blue bins and racks behind a bare head would read as a helmet.
+    hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    white = (sat < 45) & (val >= 165)
+    yellow = (hue >= 18) & (hue <= 34) & (sat >= 90) & (val >= 110)
+    orange = (hue >= 5) & (hue < 18) & (sat > 160) & (val >= 110)
+    red = ((hue < 5) | (hue >= 165)) & (sat >= 140) & (val >= 80)
+    return white | yellow | orange | red
+
+
+def head_stats(head: np.ndarray) -> dict[str, float]:
     if head.size == 0:
-        return "UNKNOWN", 0.0
-    hsv = cv2.cvtColor(head, cv2.COLOR_BGR2HSV)
-    hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
-    skin = (hue > 3) & (hue < 25) & (sat > 30) & (sat < 170) & (val > 120)
-    cap = ((sat < 75) & (val > 150) & ~skin) | ((hue > 90) & (hue < 130) & (sat > 35) & (val > 80))
-    hair = (val < 80) & ~skin & ~cap
-    cap_fraction = float(cap.mean())
-    hair_fraction = float(hair.mean())
-    if cap_fraction < 0.08 and hair_fraction >= 0.4:
-        return "NO", min(0.9, 0.55 + hair_fraction * 0.4)
-    return _pick(cap_fraction, hair_fraction, "YES", "NO")
+        return {"hat": 0.0, "hair": 0.0, "skin": 0.0}
+    sat, val = head[:, :, 1], head[:, :, 2]
+    hat = _hard_hat(head)
+    return {
+        "hat": float(hat.mean()),
+        "hair": float(((val < 75) & (sat < 120) & ~hat).mean()),
+        "skin": float((_skin(head) & ~hat).mean()),
+    }
 
 
-def _uniform_from_torso(torso: np.ndarray) -> tuple[str, float]:
-    if torso.size == 0:
-        return "UNKNOWN", 0.0
-    hue, sat, val = torso[:, :, 0], torso[:, :, 1], torso[:, :, 2]
-    workwear = (
-        ((hue > 10) & (hue < 35) & (sat > 15) & (sat < 120) & (val > 100) & (val < 220))
-        | ((sat < 45) & (val > 185))
-        | ((hue > 95) & (hue < 130) & (sat > 45) & (val > 50))
-    )
-    casual = ((hue < 10) | (hue > 165)) & (sat > 90) & (val > 70)
-    return _pick(float(workwear.mean()), float(casual.mean()), "CORRECT", "INCORRECT")
-
-
-def _pick(positive: float, negative: float, yes_label: str, no_label: str) -> tuple[str, float]:
-    if positive >= 0.28 and positive >= negative + 0.10:
-        return yes_label, min(0.9, 0.55 + positive * 0.4)
-    if negative >= 0.22 and negative >= positive + 0.10:
-        return no_label, min(0.9, 0.55 + negative * 0.4)
+def _helmet_from_head(head: np.ndarray) -> tuple[str, float]:
+    """Seen from behind, the top of the box. A light floor or wall can sit beside the head, so only strong evidence counts."""
+    stats = head_stats(head)
+    if stats["hat"] >= 0.35 and stats["hair"] < 0.15:
+        return "YES", round(min(0.9, 0.5 + stats["hat"] * 0.4), 3)
+    if stats["hair"] >= 0.45 and stats["hat"] < 0.20:
+        return "NO", round(min(0.9, 0.5 + stats["hair"] * 0.4), 3)
     return "UNKNOWN", 0.0
 
 
-class OnnxPPEClassifier:
-    """ONNX contract: 128x128 RGB input, output shape (1, 6).
+def helmet_region(face: dict) -> np.ndarray:
+    """The band just above the face: the brim and shell of a helmet, or the hair of a bare head."""
+    x, y, width, height = face["box"]
+    image = face["image"]
+    return image[max(0, int(y - 0.5 * height)) : max(0, int(y)), max(0, int(x - 0.1 * width)) : max(0, int(x + 1.1 * width))]
 
-    Logits are hairnet YES/NO/UNKNOWN then uniform CORRECT/INCORRECT/UNKNOWN.
+
+def _helmet_above_face(face: dict) -> tuple[str, float]:
+    """Hair is dark; a hard hat of any colour is not. Measured on two clips with white, yellow and ochre
+    helmets: bare heads were 66-92% dark just above the face, helmets 0-15%. A black helmet would read as hair.
+    """
+    region = helmet_region(face)
+    if region.shape[0] < 3 or region.shape[1] < 3:
+        return "UNKNOWN", 0.0
+    hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+    dark = float(((hsv[:, :, 2] < 80) & (hsv[:, :, 1] < 130)).mean())
+    if dark >= 0.45:
+        return "NO", round(min(0.9, 0.5 + dark * 0.4), 3)
+    if dark <= 0.20:
+        return "YES", round(min(0.9, 0.9 - dark), 3)
+    return "UNKNOWN", 0.0
+
+
+def _mask_colour(hsv: np.ndarray) -> np.ndarray:
+    # Surgical blue or green, and white or grey cloth. Skin is never this blue or this grey.
+    hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    surgical = (hue >= 80) & (hue <= 125) & (sat >= 20) & (val >= 70)
+    plain = (sat < 30) & (val >= 120)
+    return surgical | plain
+
+
+def mask_stats(face: dict) -> dict[str, float]:
+    """The chin strip of the face box, where a mask shows even when the head is tilted, against the forehead."""
+    right_eye, left_eye, nose = face["points"][:3]
+    x, y, width, height = face["box"]
+    eyes = float(np.linalg.norm(left_eye - right_eye))
+    empty = {"frontal": 0.0, "forehead_skin": 0.0, "mask_colour": 0.0, "bare": 0.0}
+    if eyes < 4 or width < 8 or height < 8:
+        return empty
+    image = face["image"]
+    middle = (right_eye + left_eye) / 2
+    reach = 0.2 * eyes
+    forehead = image[max(0, int(middle[1] - 0.25 * eyes - reach)) : max(0, int(middle[1] - 0.25 * eyes + reach)), max(0, int(middle[0] - reach)) : max(0, int(middle[0] + reach))]
+    chin = image[max(0, int(y + 0.65 * height)) : max(0, int(y + 1.05 * height)), max(0, int(x + 0.2 * width)) : max(0, int(x + 0.8 * width))]
+    if forehead.size == 0 or chin.size == 0:
+        return empty
+    reference = np.median(cv2.cvtColor(forehead, cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32), axis=0)
+    chin_lab = cv2.cvtColor(chin, cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
+    distance = np.sqrt(((chin_lab[:, 0] - reference[0]) * 0.5) ** 2 + (chin_lab[:, 1] - reference[1]) ** 2 + (chin_lab[:, 2] - reference[2]) ** 2)
+    # Facing the camera: the nose sits between the eyes, and the eyes span much of the face.
+    frontal = abs(float(nose[0] - middle[0])) <= 0.25 * eyes and eyes >= 0.35 * width
+    return {
+        "frontal": 1.0 if frontal else 0.0,
+        "forehead_skin": float(_skin(cv2.cvtColor(forehead, cv2.COLOR_BGR2HSV)).mean()),
+        "mask_colour": float(_mask_colour(cv2.cvtColor(chin, cv2.COLOR_BGR2HSV)).mean()),
+        "bare": float((distance <= 18).mean()),
+    }
+
+
+def _mask_on_face(face: dict) -> tuple[str, float]:
+    stats = mask_stats(face)
+    if stats["mask_colour"] >= 0.25:
+        return "YES", round(min(0.9, 0.5 + stats["mask_colour"] * 0.5), 3)
+    # No is only called on a face turned to the camera with skin to compare against, never on a profile.
+    if stats["frontal"] and stats["forehead_skin"] >= 0.3 and stats["bare"] >= 0.55 and stats["mask_colour"] < 0.08:
+        return "NO", round(min(0.9, 0.5 + stats["bare"] * 0.4), 3)
+    return "UNKNOWN", 0.0
+
+
+def _workwear(hsv: np.ndarray) -> np.ndarray:
+    hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    plain = (sat < 60) & (val >= 70) & (val <= 245)
+    blue = (hue >= 95) & (hue <= 125) & (sat >= 60) & (val >= 40) & (val <= 200)
+    return plain | blue
+
+
+def clothing_stats(crop: np.ndarray, hsv: np.ndarray) -> dict[str, float]:
+    torso = _band(hsv, TORSO_BAND)
+    work = _workwear(torso)
+    sat, val = torso[:, :, 1], torso[:, :, 2]
+    loud = (sat >= 90) & (val >= 60) & ~work & ~_skin(torso)
+    legs_hsv = _band(hsv, LEGS_BAND, 0.25, 0.75)
+    stats = {"work": float(work.mean()), "loud": float(loud.mean()), "legs_match": 0.0, "legs_dark": 0.0}
+    if not work.any() or legs_hsv.size == 0:
+        return stats
+    lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(np.float32)
+    reference = np.median(_band(lab, TORSO_BAND)[work], axis=0)
+    legs = _band(lab, LEGS_BAND, 0.25, 0.75)
+    # Lightness counts half, so a coverall leg in shadow still matches its sleeve.
+    distance = np.sqrt(((legs[:, :, 0] - reference[0]) * 0.5) ** 2 + (legs[:, :, 1] - reference[1]) ** 2 + (legs[:, :, 2] - reference[2]) ** 2)
+    stats["legs_match"] = float((distance <= 25).mean())
+    stats["legs_dark"] = float(((legs_hsv[:, :, 2] < 70) & (legs_hsv[:, :, 1] < 100)).mean())
+    return stats
+
+
+def _clothing_from_body(crop: np.ndarray, hsv: np.ndarray, legs_visible: bool) -> tuple[str, float]:
+    stats = clothing_stats(crop, hsv)
+    if stats["loud"] >= 0.35:
+        return "NO", round(min(0.9, 0.5 + stats["loud"] * 0.4), 3)
+    if stats["work"] < 0.5 or not legs_visible:
+        return "UNKNOWN", 0.0
+    if stats["legs_match"] >= 0.30:
+        return "YES", round(min(0.9, 0.5 + stats["legs_match"] * 0.4), 3)
+    if stats["legs_dark"] >= 0.50 and stats["legs_match"] < 0.25:
+        return "NO", round(min(0.9, 0.5 + stats["legs_dark"] * 0.4), 3)
+    return "UNKNOWN", 0.0
+
+
+class OnnxPPEDetector:
+    """ppe.onnx: a detector for worn and missing PPE, run on each person crop.
+
+    Output is Nx6 rows (x1, y1, x2, y2, score, class_id) in model pixels, or a YOLO
+    head (1, 12, anchors): cx, cy, w, h, then one score per class id in PPE_CLASSES.
+    An item takes the best box whose centre lies in that item's band of the person.
+    With no such box the item stays UNKNOWN.
     """
 
     def __init__(self, path: str, providers: list[str], threads: int = 2):
         self.session = onnx_session(path, providers, threads)
         self.input_name = self.session.get_inputs()[0].name
+        shape = self.session.get_inputs()[0].shape
+        self.input_h = int(shape[2]) if isinstance(shape[2], int) else 640
+        self.input_w = int(shape[3]) if isinstance(shape[3], int) else 640
+        self._letterbox: bool | None = None
 
-    def classify(self, crop, context: dict | None = None) -> dict:
+    def classify(self, crop, context: dict | None = None) -> dict[str, tuple[str, float]]:
         del context
-        if crop is None or crop.size == 0:
-            return {"hairnet": "UNKNOWN", "uniform": "UNKNOWN", "confidence": 0.0}
-        image = cv2.resize(crop, (128, 128))
-        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        if crop is None or getattr(crop, "size", 0) == 0:
+            return unknown_ppe()
+        letterbox = bool(self._letterbox)
+        output, transform = self._infer(crop, letterbox)
+        if self._letterbox is None:
+            # A YOLO head is trained on letterboxed images. Nx6 exports take a plain resize.
+            self._letterbox = _is_yolo_head(output, len(PPE_CLASSES))
+            if self._letterbox:
+                output, transform = self._infer(crop, True)
+        boxes = decode_boxes(output, len(PPE_CLASSES), self.input_w, self.input_h, *transform)
+        return ppe_from_boxes(boxes, crop.shape[1], crop.shape[0])
+
+    def _infer(self, image: np.ndarray, letterbox: bool):
+        canvas, transform = _model_canvas(image, self.input_w, self.input_h, letterbox)
+        rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
         tensor = np.transpose(rgb, (2, 0, 1))[None, :, :, :]
-        logits = np.asarray(self.session.run(None, {self.input_name: tensor})[0]).reshape(-1)
-        if logits.shape[0] < 6:
-            return {"hairnet": "UNKNOWN", "uniform": "UNKNOWN", "confidence": 0.0}
-        hairnet = ["YES", "NO", "UNKNOWN"][int(np.argmax(logits[0:3]))]
-        uniform = ["CORRECT", "INCORRECT", "UNKNOWN"][int(np.argmax(logits[3:6]))]
-        confidence = float(max(_softmax(logits[0:3]).max(), _softmax(logits[3:6]).max()))
-        return {"hairnet": hairnet, "uniform": uniform, "confidence": confidence}
+        return np.asarray(self.session.run(None, {self.input_name: tensor})[0]), transform
 
 
-def _box_has_head(frame, box: list[float]) -> bool:
-    height, width = frame.shape[:2]
-    x1, y1, x2, y2 = [int(max(0, v)) for v in box[:2]] + [int(min(width, box[2])), int(min(height, box[3]))]
-    if y2 - y1 < 48 or x2 - x1 < 20:
-        return False
-    if (y2 - y1) < (x2 - x1) * 1.05:
-        return False
-    head = frame[y1 : y1 + max(8, int((y2 - y1) * 0.38)), x1 + int((x2 - x1) * 0.2) : x2 - int((x2 - x1) * 0.2)]
-    skin, cap, hair = _head_masks(head)
-    if skin.size == 0:
-        return False
-    return float(skin.mean()) > 0.08 and (float(cap.mean()) > 0.08 or float(hair.mean()) > 0.12 or float(skin.mean()) > 0.16)
+def _is_yolo_head(output, classes: int) -> bool:
+    """(anchors, 4+classes) or (4+classes, anchors). Nx6 rows are never a head."""
+    rows = np.squeeze(np.asarray(output))
+    channels = 4 + classes
+    return rows.ndim == 2 and (rows.shape[1] == channels or (rows.shape[0] == channels and rows.shape[1] != 6))
 
 
-def _people_from_heads(frame) -> list[dict]:
-    height, width = frame.shape[:2]
-    skin, cap, hair = _head_masks(frame)
-    found = _blobs_to_people(frame, cap, skin, 0.86)
-    found.extend(_blobs_to_people(frame, hair, skin, 0.74))
-    found = _keep_upper_heads(found, width)
-    for person in found:
-        box = person["bbox_xyxy"]
-        box[0] = max(0, box[0])
-        box[1] = max(0, box[1])
-        box[2] = min(width - 1, box[2])
-        box[3] = min(height - 1, box[3])
+def _model_canvas(image: np.ndarray, input_w: int, input_h: int, letterbox: bool, scale: float = 1.0):
+    """The model image, and how to map its pixels back: image = (model - pad) / gain.
+
+    A scale under 1 letterboxes the image smaller, centred on grey, as if the camera were further away.
+    """
+    height, width = image.shape[:2]
+    if not letterbox:
+        return cv2.resize(image, (input_w, input_h)), (input_w / max(width, 1), input_h / max(height, 1), 0.0, 0.0)
+    gain = min(input_w / max(width, 1), input_h / max(height, 1)) * min(1.0, max(0.1, scale))
+    resized = cv2.resize(image, (max(int(round(width * gain)), 1), max(int(round(height * gain)), 1)))
+    canvas = np.full((input_h, input_w, 3), 114, dtype=np.uint8)
+    pad_x = (input_w - resized.shape[1]) // 2
+    pad_y = (input_h - resized.shape[0]) // 2
+    canvas[pad_y : pad_y + resized.shape[0], pad_x : pad_x + resized.shape[1]] = resized
+    return canvas, (gain, gain, float(pad_x), float(pad_y))
+
+
+def decode_boxes(
+    output,
+    classes: int,
+    input_w: int,
+    input_h: int,
+    gain_x: float = 1.0,
+    gain_y: float = 1.0,
+    pad_x: float = 0.0,
+    pad_y: float = 0.0,
+    threshold: float = 0.35,
+) -> list[tuple[int, float, list[float]]]:
+    """(class_id, score, [x1, y1, x2, y2]) in image pixels, from Nx6 rows or a YOLO head."""
+    rows = np.squeeze(np.asarray(output, dtype=np.float32))
+    if rows.ndim == 1:
+        rows = rows[None, :]
+    if rows.ndim != 2:
+        return []
+    channels = 4 + classes
+    if _is_yolo_head(rows, classes):
+        if rows.shape[1] != channels:
+            rows = rows.T
+        centre_x, centre_y, box_w, box_h = rows[:, 0], rows[:, 1], rows[:, 2], rows[:, 3]
+        if rows.size and float(np.abs(rows[:, :4]).max()) <= 1.5:
+            centre_x, centre_y, box_w, box_h = centre_x * input_w, centre_y * input_h, box_w * input_w, box_h * input_h
+        class_ids = np.argmax(rows[:, 4:channels], axis=1)
+        scores = rows[np.arange(len(rows)), 4 + class_ids]
+        corners = np.stack([centre_x - box_w / 2, centre_y - box_h / 2, centre_x + box_w / 2, centre_y + box_h / 2], axis=1)
+    elif rows.shape[1] >= 6:
+        corners, scores, class_ids = rows[:, :4], rows[:, 4], rows[:, 5].astype(int)
+    else:
+        return []
+    found = []
+    for index in np.where(scores >= threshold)[0]:
+        x1, y1, x2, y2 = (float(value) for value in corners[index])
+        box = [(x1 - pad_x) / gain_x, (y1 - pad_y) / gain_y, (x2 - pad_x) / gain_x, (y2 - pad_y) / gain_y]
+        found.append((int(class_ids[index]), float(scores[index]), box))
     return found
 
 
-def _blobs_to_people(frame, feature_mask: np.ndarray, skin: np.ndarray, confidence: float) -> list[dict]:
-    height, width = frame.shape[:2]
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
-    uniform = (
-        ((hue > 8) & (hue < 35) & (sat > 18) & (sat < 150) & (val > 80))
-        | ((sat < 55) & (val > 170))
-        | ((hue > 95) & (hue < 135) & (sat > 35) & (val > 35))
-    )
-    mask = cv2.morphologyEx(feature_mask.astype(np.uint8) * 255, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    people = []
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        if h < height * 0.035 or h > height * 0.13 or w > width * 0.1 or w > h * 2.4:
+def ppe_from_boxes(boxes: list[tuple[int, float, list[float]]], width: int, height: int) -> dict[str, tuple[str, float]]:
+    result = unknown_ppe()
+    for class_id, score, (x1, y1, x2, y2) in boxes:
+        named = PPE_CLASSES.get(class_id)
+        if named is None:
             continue
-        if y < height * 0.03:
+        item, state = named
+        top, bottom = PPE_BANDS[item]
+        centre_x = (x1 + x2) / 2.0 / max(width, 1)
+        centre_y = (y1 + y2) / 2.0 / max(height, 1)
+        if not (0.0 <= centre_x <= 1.0 and top <= centre_y <= bottom):
             continue
-        top = y
-        above = feature_mask[max(0, y - int(h * 2.2)) : y, x : x + w]
-        if above.size and above.any():
-            rows = above.any(axis=1)
-            top = max(0, y - int(h * 2.2)) + int(np.argmax(rows))
-        face_y1, face_y2 = y + h, min(height, y + h + int(h * 1.15))
-        face_x1, face_x2 = x + w // 8, max(x + w // 8 + 1, x + w - w // 8)
-        face = skin[face_y1:face_y2, face_x1:face_x2]
-        face_values = val[face_y1:face_y2, face_x1:face_x2]
-        if face.size == 0 or float(face.mean()) < 0.2 or float(face_values.std()) < 12:
-            continue
-        column_x1, column_x2 = max(0, x - w // 2), min(width, x + w + w // 2)
-        bottom = face_y2
-        while bottom < height - 4 and bottom - y < height * 0.7:
-            band = uniform[bottom : bottom + 4, column_x1:column_x2]
-            if band.size == 0 or float(band.mean()) < 0.22:
-                break
-            bottom += 4
-        if bottom - face_y2 < h * 1.6:
-            continue
-        body_height = bottom - top
-        body_width = max(w * 2.2, body_height * 0.42)
-        center_x = x + w / 2
-        body_x1 = max(0, int(center_x - body_width / 2))
-        body_x2 = min(width - 1, int(center_x + body_width / 2))
-        box_w, box_h = body_x2 - body_x1, body_height
-        if box_w > width * 0.34 or not (height * 0.28 <= box_h <= height * 0.72):
-            continue
-        body_bottom = min(height - 1, bottom)
-        people.append(
-            {
-                "class_name": "person",
-                "class_id": PERSON_CLASS,
-                "confidence": confidence,
-                "bbox_xyxy": [float(body_x1), float(top), float(body_x2), float(body_bottom)],
-                "ppe_mode": "model",
-            }
-        )
-    return people
-
-
-def _keep_upper_heads(people: list[dict], width: int) -> list[dict]:
-    kept = []
-    for person in sorted(people, key=lambda item: item["bbox_xyxy"][1]):
-        center = (person["bbox_xyxy"][0] + person["bbox_xyxy"][2]) / 2
-        top = person["bbox_xyxy"][1]
-        covered = False
-        for other in kept:
-            other_center = (other["bbox_xyxy"][0] + other["bbox_xyxy"][2]) / 2
-            if abs(center - other_center) < width * 0.14 and other["bbox_xyxy"][1] <= top:
-                covered = True
-                break
-        if not covered:
-            kept.append(person)
-    return kept
-
-
-def _head_masks(image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if image.size == 0:
-        empty = np.zeros((0, 0), dtype=bool)
-        return empty, empty, empty
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
-    skin = (hue > 3) & (hue < 22) & (sat > 35) & (sat < 180) & (val > 70)
-    cap = (sat < 55) & (val > 168) & ~skin
-    hair = (val < 65) & ~skin
-    return skin, cap, hair
+        if score > result[item][1]:
+            result[item] = (state, round(score, 3))
+    return result
 
 
 def _nms(detections: list[dict], threshold: float, by_confidence: bool = False) -> list[dict]:
@@ -385,12 +570,6 @@ def _iou(a: list[float], b: list[float]) -> float:
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
     area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1]) + max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1]) - inter
     return inter / area if area else 0.0
-
-
-def _softmax(values: np.ndarray) -> np.ndarray:
-    shifted = values - np.max(values)
-    exp = np.exp(shifted)
-    return exp / max(exp.sum(), 1e-6)
 
 
 def onnx_session(path: str, providers: list[str], threads: int):
@@ -416,13 +595,20 @@ def providers_for(device: str) -> list[str]:
     return ["CPUExecutionProvider"]
 
 
-class YoloxPersonDetector:
-    """YOLOX-Nano, Apache-2.0. Output is decoded from the 416-pixel grid."""
+class YoloxDetector:
+    """Official YOLOX ONNX models, Apache-2.0, trained on COCO. Nano and Tiny take 416 pixels, S and up take 640;
+    the size is read from the model. People and vehicles (COCO_VEHICLES) are kept.
 
-    def __init__(self, path: str, providers: list[str], threads: int = 2):
+    Boxes down to 0.30 are kept so the tracker can hold on to a partly hidden person.
+    The tracker only starts a new person or vehicle from a confident box.
+    """
+
+    def __init__(self, path: str, providers: list[str], threads: int = 2, threshold: float = 0.30):
         self.session = onnx_session(path, providers, threads)
         self.input_name = self.session.get_inputs()[0].name
-        self.input_size = 416
+        size = self.session.get_inputs()[0].shape[2]
+        self.input_size = int(size) if isinstance(size, int) else 416
+        self.threshold = threshold
 
     def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[dict]:
         del zones, now, hold_inside
@@ -444,16 +630,21 @@ class YoloxPersonDetector:
             center_y = (feature[:, 1] + gy) * stride
             box_w = np.exp(np.clip(feature[:, 2], -6, 6)) * stride
             box_h = np.exp(np.clip(feature[:, 3], -6, 6)) * stride
-            score = feature[:, 4] * feature[:, 5]
-            for index in np.where(score > 0.55)[0]:
+            kept = [0] + list(COCO_VEHICLES)
+            class_scores = feature[:, 4:5] * feature[:, [5 + cls for cls in kept]]
+            best = np.argmax(class_scores, axis=1)
+            score = class_scores[np.arange(len(best)), best]
+            for index in np.where(score > self.threshold)[0]:
+                coco = kept[int(best[index])]
                 x1 = (center_x[index] - box_w[index] / 2 - pad_x) / scale
                 y1 = (center_y[index] - box_h[index] / 2 - pad_y) / scale
                 x2 = (center_x[index] + box_w[index] / 2 - pad_x) / scale
                 y2 = (center_y[index] + box_h[index] / 2 - pad_y) / scale
                 detections.append(
                     {
-                        "class_name": "person",
-                        "class_id": PERSON_CLASS,
+                        "class_name": "person" if coco == 0 else "vehicle",
+                        "class_id": PERSON_CLASS if coco == 0 else VEHICLE_CLASS,
+                        "vehicle_type": COCO_VEHICLES.get(coco),
                         "confidence": float(score[index]),
                         "bbox_xyxy": [
                             float(np.clip(x1, 0, width - 1)),
@@ -461,7 +652,6 @@ class YoloxPersonDetector:
                             float(np.clip(x2, 0, width - 1)),
                             float(np.clip(y2, 0, height - 1)),
                         ],
-                        "ppe_mode": "model",
                     }
                 )
         return _nms(detections, 0.45, by_confidence=True)
@@ -484,27 +674,32 @@ def build_detectors(mode: str, model_path: str, device: str, threads: int = 2):
     person_onnx = root / "person.onnx"
     forklift_onnx = root / "forklift.onnx"
     ppe_onnx = root / "ppe.onnx"
+    face_onnx = root / "face.onnx"
+    mask_onnx = root / "mask.onnx"
     person_name, person_version = "person-detector", "hog-v1"
     if mode.upper() == "DEMO":
         detector = DemoDetector()
         ppe = DemoPPEClassifier()
-        return detector, ppe, "person-detector", "v0-demo", "ppe-classifier", "v0.1-demo"
+        return detector, ppe, "person-detector", "v0-demo", "ppe-detector", "v0-demo"
     if person_onnx.exists():
-        detector = YoloxPersonDetector(str(person_onnx), providers, threads)
-        person_name, person_version = "yolox-nano", "apache-2.0"
+        detector = YoloxDetector(str(person_onnx), providers, threads)
+        person_name, person_version = f"yolox-{detector.input_size}", "apache-2.0"
     else:
         detector = HogPersonDetector()
         person_version = "hog-v1"
     if forklift_onnx.exists() and not isinstance(detector, OnnxObjectDetector):
         # A dedicated forklift file is used by wrapping both detectors below.
         pass
-    ppe_name, ppe_version = "ppe-classifier", "unloaded"
+    ppe_name, ppe_version = "ppe-detector", "unloaded"
     if ppe_onnx.exists():
-        ppe = OnnxPPEClassifier(str(ppe_onnx), providers, threads)
+        ppe = OnnxPPEDetector(str(ppe_onnx), providers, threads)
         ppe_version = "onnx"
     else:
-        ppe = ColorPPEClassifier()
-        ppe_version = "color-v1"
+        # Without face.onnx the helmet is read from the top of the box only, and the mask stays UNKNOWN.
+        faces = FaceFinder(str(face_onnx)) if face_onnx.exists() else None
+        masks = MaskClassifier(str(mask_onnx), providers, 1) if faces is not None and mask_onnx.exists() else None
+        ppe = ColorPPEClassifier(faces, masks)
+        ppe_version = "color-v3" + ("+face" if faces else "") + ("+mask" if masks else "")
     if forklift_onnx.exists():
         detector = _ForkliftUnion(detector, OnnxObjectDetector(str(forklift_onnx), providers, threads))
     return detector, ppe, person_name, person_version, ppe_name, ppe_version
@@ -516,6 +711,207 @@ class _ForkliftUnion:
         self.forklift_detector = forklift_detector
 
     def detect(self, frame, zones, now, hold_inside):
-        people = [item for item in self.person_detector.detect(frame, zones, now, hold_inside) if item["class_name"] == "person"]
-        trucks = [item for item in self.forklift_detector.detect(frame, zones, now, hold_inside) if item["class_name"] == "forklift"]
-        return people + trucks
+        found = self.person_detector.detect(frame, zones, now, hold_inside)
+        forklifts = [item for item in self.forklift_detector.detect(frame, zones, now, hold_inside) if item["class_name"] == "vehicle"]
+        return found + forklifts
+
+
+class VehicleTyper:
+    """Zero-shot vehicle type from CLIP ViT-B/32: the image vector of a vehicle crop against one text vector per type.
+
+    clip_vision.onnx is the image encoder; vehicle_types.npz holds the text vectors, made by
+    tools/vehicle_types/export_vehicle_types.py with the matching text encoder. No training.
+    On the port reference image forklifts scored 0.97 and 0.99 and cars 0.00 to 0.02.
+    """
+
+    name, version = "clip-vit-b32", "zero-shot"
+    MEAN = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
+    STD = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
+
+    def __init__(self, vision_path: str, types_path: str, providers: list[str], threads: int = 1):
+        self.session = onnx_session(vision_path, providers, threads)
+        self.input_name = self.session.get_inputs()[0].name
+        types = np.load(types_path)
+        self.labels = [str(label) for label in types["labels"]]
+        self.vectors = types["vectors"].astype(np.float32)
+
+    def classify(self, crop, hint: str | None = None) -> tuple[str, float]:
+        del hint
+        if crop is None or getattr(crop, "size", 0) == 0:
+            return "", 0.0
+        height, width = crop.shape[:2]
+        side = max(height, width)
+        canvas = np.full((side, side, 3), 124, dtype=np.uint8)
+        canvas[(side - height) // 2 : (side - height) // 2 + height, (side - width) // 2 : (side - width) // 2 + width] = crop
+        rgb = cv2.cvtColor(cv2.resize(canvas, (224, 224), interpolation=cv2.INTER_CUBIC), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        vector = np.asarray(self.session.run(None, {self.input_name: ((rgb - self.MEAN) / self.STD).transpose(2, 0, 1)[None]})[0]).reshape(-1)
+        chances = _softmax(100.0 * self.vectors @ (vector / np.linalg.norm(vector)))
+        best = int(np.argmax(chances))
+        return self.labels[best], round(float(chances[best]), 3)
+
+
+class HintVehicleTyper:
+    """Takes the type the detector gave. DEMO scripts it. Without the CLIP files it is the COCO class,
+    and COCO has no forklift, so a forklift comes out as a truck and is not allowed."""
+
+    def __init__(self, name: str, version: str):
+        self.name, self.version = name, version
+
+    def classify(self, crop, hint: str | None = None) -> tuple[str, float]:
+        del crop
+        return (hint or "", 0.9 if hint else 0.0)
+
+
+def build_vehicle_typer(mode: str, model_path: str, device: str, threads: int = 1):
+    if mode.upper() == "DEMO":
+        return HintVehicleTyper("vehicle-typer", "v0-demo")
+    vision, types = Path(model_path) / "clip_vision.onnx", Path(model_path) / "vehicle_types.npz"
+    if vision.exists() and types.exists():
+        return VehicleTyper(str(vision), str(types), providers_for(device), threads)
+    return HintVehicleTyper("coco-class", "no-forklift")
+
+
+# handwash.onnx class ids, as in the reference model: four WHO movements, each done once per side.
+# Sides are not told apart here. 8 and 9 are for a model trained on all six steps.
+HANDWASH_CLASSES = {
+    0: "backs",
+    1: "backs",
+    2: "fingers",
+    3: "fingers",
+    4: "thumbs",
+    5: "thumbs",
+    6: "fingertips",
+    7: "fingertips",
+    8: "palms",
+    9: "interlaced",
+}
+
+
+class OnnxHandwashDetector:
+    """handwash.onnx: hand-washing gestures from YOLOv8, exported by tools/handwash_yolo/export_handwash_onnx.py.
+
+    The reference model was trained on whole 960x540 frames from a camera above the sink, so the whole
+    frame goes in, letterboxed. A camera closer to the sink shows bigger hands than the model learned;
+    scale shrinks the frame to make up for it. Detection and segmentation exports both work: the class
+    count comes from the names Ultralytics writes into the file, and mask channels after the class
+    scores are ignored. Each hit is (step, score, box in frame pixels). steps holds the steps the model
+    has a class for.
+    """
+
+    def __init__(self, path: str, providers: list[str], threads: int = 2, threshold: float = 0.35, scale: float = 1.0):
+        self.session = onnx_session(path, providers, threads)
+        self.input_name = self.session.get_inputs()[0].name
+        shape = self.session.get_inputs()[0].shape
+        self.input_h = int(shape[2]) if isinstance(shape[2], int) else 640
+        self.input_w = int(shape[3]) if isinstance(shape[3], int) else 640
+        meta = self.session.get_modelmeta().custom_metadata_map
+        names = ast.literal_eval(meta["names"]) if "names" in meta else None
+        self.classes = len(names) if names else int(self.session.get_outputs()[0].shape[1]) - 4
+        self.steps = {HANDWASH_CLASSES[index] for index in range(self.classes) if index in HANDWASH_CLASSES}
+        self.threshold = threshold
+        self.scale = scale
+        self.name, self.version = "handwash-yolov8n", meta.get("task", "detect")
+
+    def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[tuple[str, float, list[float]]]:
+        del zones, now, hold_inside
+        canvas, transform = _model_canvas(frame, self.input_w, self.input_h, True, self.scale)
+        rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        output = np.asarray(self.session.run(None, {self.input_name: np.transpose(rgb, (2, 0, 1))[None]})[0])
+        boxes = decode_boxes(output[:, : 4 + self.classes], self.classes, self.input_w, self.input_h, *transform, threshold=self.threshold)
+        return [(HANDWASH_CLASSES[class_id], score, box) for class_id, score, box in boxes if class_id in HANDWASH_CLASSES]
+
+
+class OnnxHandwashClassifier:
+    """handwash_steps.onnx: the site's own step classifier, built by tools/handwash_classifier/train_handwash.py.
+
+    It looks at each hand-wash zone's bounding box, padded square on grey and 224 px, and names one class
+    for it: none, other (hands, but no step: wetting, soap, rinsing) or one of the six steps. The zone has to
+    be drawn as it was for training, around the sink. Trained on the site's two sample clips, it named the
+    right class in 87.5% of the frames of the clip it had not seen.
+    No hands gives no hit; other keeps a wash going without crediting a step.
+    """
+
+    SIZE = 224
+    MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    CLASSES = ("none", "other", "palms", "backs", "interlaced", "fingers", "thumbs", "fingertips")
+
+    def __init__(self, path: str, providers: list[str], threads: int = 1):
+        self.session = onnx_session(path, providers, threads)
+        self.input_name = self.session.get_inputs()[0].name
+        meta = self.session.get_modelmeta().custom_metadata_map
+        self.classes = meta["classes"].split(",") if "classes" in meta else list(self.CLASSES)
+        self.steps = {name for name in self.classes if name in WASH_STEPS}
+        self.name, self.version = "handwash-steps", meta.get("trained_on", "site")
+
+    def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[tuple[str, float, list[float]]]:
+        del now, hold_inside
+        height, width = frame.shape[:2]
+        found = []
+        for zone in zones:
+            points = zone.get("polygon") or []
+            if len(points) < 3:
+                continue
+            xs, ys = [point[0] for point in points], [point[1] for point in points]
+            box = [min(xs) * width, min(ys) * height, max(xs) * width, max(ys) * height]
+            rgb = cv2.cvtColor(zone_square(frame, box, self.SIZE), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+            logits = np.asarray(self.session.run(None, {self.input_name: ((rgb - self.MEAN) / self.STD).transpose(2, 0, 1)[None]})[0]).reshape(-1)
+            chances = _softmax(logits)
+            best = int(np.argmax(chances))
+            if self.classes[best] != "none":
+                found.append((self.classes[best], round(float(chances[best]), 3), box))
+        return found
+
+
+def zone_square(frame: np.ndarray, box: list[float], size: int) -> np.ndarray:
+    """The box, padded square on grey 127 and resized, as tools/handwash_classifier/train_handwash.py crops it."""
+    x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+    region = frame[max(0, y1) : max(0, y2), max(0, x1) : max(0, x2)]
+    side = max(region.shape[:2]) if region.size else 1
+    canvas = np.full((side, side, 3), 127, dtype=np.uint8)
+    top, left = (side - region.shape[0]) // 2, (side - region.shape[1]) // 2
+    canvas[top : top + region.shape[0], left : left + region.shape[1]] = region
+    stored = cv2.resize(canvas, (256, 256), interpolation=cv2.INTER_AREA)
+    return cv2.resize(stored, (size, size), interpolation=cv2.INTER_AREA)
+
+
+class DemoHandwashDetector:
+    """Scripted gestures at each hand-wash station. It knows all six steps."""
+
+    name, version = "handwash-detector", "v0-demo"
+    steps = set(WASH_STEPS)
+
+    def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[tuple[str, float, list[float]]]:
+        height, width = frame.shape[:2]
+        found = []
+        for zone in zones:
+            scripted = scripted_wash(zone, now, hold_inside)
+            if scripted is None:
+                continue
+            step, (nx, ny) = scripted
+            found.append((step, 0.86, [(nx - 0.08) * width, (ny - 0.07) * height, (nx + 0.08) * width, (ny + 0.07) * height]))
+        return found
+
+
+class NoHandwashDetector:
+    """REAL mode without handwash.onnx: no hands are ever found, so no wash is checked."""
+
+    name, version = "handwash-detector", "unloaded"
+    steps: set[str] = set()
+
+    def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[tuple[str, float, list[float]]]:
+        del frame, zones, now, hold_inside
+        return []
+
+
+def build_handwash_detector(mode: str, model_path: str, device: str, threads: int = 2, scale: float = 1.0):
+    """The site's step classifier when it is installed, else the reference gesture detector."""
+    if mode.upper() == "DEMO":
+        return DemoHandwashDetector()
+    steps = Path(model_path) / "handwash_steps.onnx"
+    if steps.exists():
+        return OnnxHandwashClassifier(str(steps), providers_for(device), threads)
+    path = Path(model_path) / "handwash.onnx"
+    if path.exists():
+        return OnnxHandwashDetector(str(path), providers_for(device), threads, scale=scale)
+    return NoHandwashDetector()

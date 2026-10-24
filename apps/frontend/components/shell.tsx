@@ -147,7 +147,7 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
           <div className="font-display text-[14.5px] font-semibold leading-[1.15] text-graphite-900">Safety<br />Monitor</div>
         </div>
         <div className="mx-[22px] h-px bg-line-soft" />
-        <div className="eyebrow hidden px-[22px] pb-2 pt-5 text-graphite-400 md:block">Coffee factory</div>
+        <div className="eyebrow hidden px-[22px] pb-2 pt-5 text-graphite-400 md:block">Factory & workshop</div>
         <nav className="flex gap-0.5 overflow-auto px-3 py-3 md:flex-col md:py-0">
           {LINKS.map((link) => {
             const active = link.href === "/" ? path === "/" : path.startsWith(link.href);
@@ -213,7 +213,7 @@ export default function Shell({ title, children, actions, back }: ShellProps) {
                     <span className="text-graphite-300">/</span>
                   </>
                 ) : null}
-                <div className="eyebrow text-brand-600">Coffee factory · Safety</div>
+                <div className="eyebrow text-brand-600">Factory · Safety</div>
               </div>
               <h1 className="m-0 font-display text-[32px] font-bold leading-tight tracking-[-0.01em] text-graphite-900">{title}</h1>
               <p className="text-[14.5px] text-graphite-500">AI raises an alert. A person decides what it means.</p>

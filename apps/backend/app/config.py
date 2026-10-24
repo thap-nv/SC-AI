@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 720
     internal_api_token: str
     ai_mode: str = "DEMO"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     demo_admin_password: str = "admin123"
     demo_safety_password: str = "safety123"
     demo_viewer_password: str = "viewer123"

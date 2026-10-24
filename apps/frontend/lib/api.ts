@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export type User = { id: string; username: string; full_name: string; role: "ADMIN" | "SAFETY_MANAGER" | "VIEWER" };
 

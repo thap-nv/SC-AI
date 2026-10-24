@@ -16,15 +16,17 @@ def rule(**overrides) -> RuleConfig:
     return RuleConfig(**base)
 
 
-def see(engine, config, t, inside=True, hairnet="YES", uniform="CORRECT", track="7", klass="person"):
+KITTED = {"helmet": "YES", "clothing": "YES", "shoes": "YES", "mask": "YES"}
+
+
+def see(engine, config, t, inside=True, ppe=None, track="7", klass="person"):
     return engine.update(
         config,
         Observation(
             track_id=track,
             timestamp=t,
             inside=inside,
-            hairnet=hairnet,
-            uniform=uniform,
+            ppe={**KITTED, **(ppe or {})},
             confidence=0.9,
             bbox=(0.4, 0.4, 0.5, 0.7),
             class_name=klass,
@@ -87,32 +89,39 @@ def test_leave_closes_then_cooldown_blocks_reentry():
     assert opened[0].kind == "open"
 
 
-def test_unknown_hairnet_does_not_violate():
+def test_unknown_ppe_does_not_violate():
     engine = RuleEngine()
-    config = rule(condition_type="HAIRNET_MISSING", event_type="HAIRNET_VIOLATION")
-    assert see(engine, config, 0.0, hairnet="UNKNOWN") == []
-    assert see(engine, config, 5.0, hairnet="UNKNOWN") == []
-    assert see(engine, config, 0.0, hairnet="YES", track="8") == []
-    assert see(engine, config, 3.0, hairnet="YES", track="8") == []
+    config = rule(condition_type="HELMET_MISSING", event_type="HELMET_VIOLATION")
+    assert see(engine, config, 0.0, ppe={"helmet": "UNKNOWN"}) == []
+    assert see(engine, config, 5.0, ppe={"helmet": "UNKNOWN"}) == []
+    assert see(engine, config, 0.0, ppe={"helmet": "YES"}, track="8") == []
+    assert see(engine, config, 3.0, ppe={"helmet": "YES"}, track="8") == []
 
 
-def test_missing_hairnet_opens_after_duration():
+def test_each_missing_item_opens_only_its_own_rule():
+    conditions = {
+        "helmet": ("HELMET_MISSING", "HELMET_VIOLATION"),
+        "clothing": ("CLOTHING_MISSING", "CLOTHING_VIOLATION"),
+        "shoes": ("SHOES_MISSING", "SHOES_VIOLATION"),
+        "mask": ("MASK_MISSING", "MASK_VIOLATION"),
+    }
+    for missing in conditions:
+        engine = RuleEngine()
+        for item, (condition, event_type) in conditions.items():
+            config = rule(id=f"rule-{item}", condition_type=condition, event_type=event_type)
+            see(engine, config, 0.0, ppe={missing: "NO"})
+            opened = see(engine, config, 2.0, ppe={missing: "NO"})
+            if item == missing:
+                assert [action.event_type for action in opened] == [event_type]
+            else:
+                assert opened == []
+
+
+def test_missing_ppe_outside_the_zone_does_not_violate():
     engine = RuleEngine()
-    config = rule(condition_type="HAIRNET_MISSING", event_type="HAIRNET_VIOLATION")
-    assert see(engine, config, 0.0, hairnet="NO") == []
-    opened = see(engine, config, 2.0, hairnet="NO")
-    assert len(opened) == 1
-    assert opened[0].event_type == "HAIRNET_VIOLATION"
-
-
-def test_unknown_uniform_does_not_violate_and_incorrect_does():
-    engine = RuleEngine()
-    config = rule(condition_type="UNIFORM_INCORRECT", event_type="UNIFORM_VIOLATION")
-    assert see(engine, config, 0.0, uniform="UNKNOWN") == []
-    assert see(engine, config, 4.0, uniform="UNKNOWN") == []
-    assert see(engine, config, 0.0, uniform="INCORRECT", track="9") == []
-    opened = see(engine, config, 2.0, uniform="INCORRECT", track="9")
-    assert len(opened) == 1
+    config = rule(condition_type="MASK_MISSING", event_type="MASK_VIOLATION")
+    assert see(engine, config, 0.0, inside=False, ppe={"mask": "NO"}) == []
+    assert see(engine, config, 5.0, inside=False, ppe={"mask": "NO"}) == []
 
 
 def test_forklift_track_does_not_open_person_rule():
@@ -132,3 +141,35 @@ def test_missing_track_closes_after_grace():
     closed = engine.expire_missing({config.id: config}, 4.5, set())
     assert len(closed) == 1
     assert closed[0].kind == "close"
+
+
+def vehicle(engine, config, t, vehicle_type, track="v1", inside=True):
+    return engine.update(config, Observation(track_id=track, timestamp=t, inside=inside, confidence=0.9, class_name="vehicle", vehicle_type=vehicle_type))
+
+
+def test_a_car_in_a_restricted_area_opens_and_a_forklift_does_not():
+    config = rule(condition_type="VEHICLE_INSIDE", event_type="VEHICLE_IN_RESTRICTED_AREA", min_duration_s=1.0)
+    engine = RuleEngine()
+    vehicle(engine, config, 0.0, "car")
+    assert [action.kind for action in vehicle(engine, config, 1.0, "car")] == ["open"]
+    for allowed_or_unknown in ("forklift", ""):
+        engine = RuleEngine()
+        vehicle(engine, config, 0.0, allowed_or_unknown)
+        assert vehicle(engine, config, 5.0, allowed_or_unknown) == []
+
+
+def test_vehicle_rules_ignore_people_and_person_rules_ignore_vehicles():
+    engine = RuleEngine()
+    cars = rule(condition_type="VEHICLE_INSIDE", event_type="VEHICLE_IN_RESTRICTED_AREA", min_duration_s=0.0)
+    people = rule(id="rule-2", min_duration_s=0.0)
+    assert see(engine, cars, 0.0) == []
+    assert vehicle(engine, people, 0.0, "car") == []
+
+
+def test_a_person_riding_a_vehicle_does_not_open_the_person_rule():
+    engine = RuleEngine()
+    config = rule(min_duration_s=0.0)
+    driver = Observation(track_id="d1", timestamp=0.0, inside=True, confidence=0.9, in_vehicle=True)
+    assert engine.update(config, driver) == []
+    walker = Observation(track_id="w1", timestamp=0.0, inside=True, confidence=0.9)
+    assert [action.kind for action in engine.update(config, walker)] == ["open"]

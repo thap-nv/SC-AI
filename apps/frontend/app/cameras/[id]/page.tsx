@@ -8,9 +8,17 @@ import Shell from "@/components/shell";
 import { Badge, ErrorText, Notice, OutlineButton, PrimaryButton, RecDot, SeverityTag, StatusPill, Switch } from "@/components/ui";
 import { api, Camera, getUser, imageUrl, Incident, Rule } from "@/lib/api";
 import { useIncidentEvents } from "@/lib/live";
-import { BEAN_LABELS, COFFEE_STAGE_LABELS, eventLabel, formatTime } from "@/lib/labels";
+import { eventLabel, formatTime } from "@/lib/labels";
 
-type Check = { text: string; state: "violation" | "ok" | "unknown" };
+// item is helmet, clothing, shoes, mask, zone for a zone breach, or step1 to step6 for a WHO hand-washing step.
+type Check = { item?: string; text: string; state: "violation" | "ok" | "unknown" };
+
+const ITEM_NAMES: Record<string, string> = { helmet: "Helmet", clothing: "Clothing", shoes: "Shoes", mask: "Mask" };
+const CHECK_CHIPS: Record<Check["state"], { mark: string; style: string }> = {
+  violation: { mark: "✗", style: "bg-brand-500/25 text-brand-200" },
+  ok: { mark: "✓", style: "bg-success-600/20 text-success-200" },
+  unknown: { mark: "?", style: "bg-ink-edge text-fog-300" },
+};
 
 type ZoneState = { id: string; name: string; state: string; shift_pct: number };
 
@@ -26,19 +34,10 @@ const ZONE_STATES: Record<string, { label: (zone: ZoneState) => string; tone: st
 const PAUSED_STATES = new Set(["VIEW_CHANGED", "OUT_OF_VIEW"]);
 const LIVE = new Set(["ONLINE", "AI_PROCESSING"]);
 
-type CoffeeLine = {
-  zone_id: string;
-  name: string;
-  stage: string;
-  total: number;
-  window_total: number;
-  defects: number;
-  defect_rate: number;
-  by_class: Record<string, number>;
-  in_frame: number;
-};
-
-type Track = { track_id: string; class_name: string; confidence: number; hairnet?: string; uniform?: string; checks?: Check[] };
+// ppe: helmet, clothing, shoes, mask → YES | NO | UNKNOWN
+// vehicle_type for a vehicle: car, truck, bus, motorcycle or forklift.
+// class_name hands is a wash under way at a sink; wash_s is how long the hands have been washing.
+type Track = { track_id: string; class_name: string; confidence: number; ppe?: Record<string, string>; vehicle_type?: string | null; checks?: Check[]; wash_s?: number | null };
 
 type Live = {
   status: string;
@@ -50,15 +49,25 @@ type Live = {
   source_state?: string;
   tracks: Track[];
   zones?: ZoneState[];
-  coffee?: CoffeeLine[];
 };
 
-// How a tracked person reads in the "People in view" card.
+// How a tracked person or vehicle reads in the "In view" card.
 function verdict(track: Track) {
   const checks = track.checks || [];
   if (checks.some((check) => check.state === "violation")) return { chip: "Violation", box: "border-brand-500", style: "bg-brand-500/20 text-brand-200" };
-  if (checks.length && checks.every((check) => check.state === "ok")) return { chip: "Compliant", box: "border-success-600", style: "bg-success-600/20 text-success-200" };
-  return { chip: "Not checked", box: "border-fog-500", style: "bg-ink-edge text-fog-300" };
+  const hands = track.class_name === "hands";
+  if (checks.length && checks.every((check) => check.state === "ok")) return { chip: hands ? "All steps done" : track.class_name === "person" ? "Compliant" : "Allowed", box: "border-success-600", style: "bg-success-600/20 text-success-200" };
+  return { chip: hands ? "Washing" : "Not checked", box: "border-fog-500", style: "bg-ink-edge text-fog-300" };
+}
+
+function trackName(track: Track) {
+  if (track.class_name === "person") return `Person ${track.track_id}`;
+  if (track.class_name === "hands") return `Hand wash · ${track.wash_s ?? 0}s`;
+  return `${vehicleName(track.vehicle_type)} ${track.track_id}`;
+}
+
+function vehicleName(type?: string | null) {
+  return type ? type.charAt(0).toUpperCase() + type.slice(1) : "Vehicle";
 }
 
 export default function CameraDetailPage() {
@@ -149,7 +158,7 @@ export default function CameraDetailPage() {
       const updated = await api<Camera>(`/api/cameras/${params.id}/video`, { method: "POST", body });
       setCamera(updated);
       setUpload(file.name);
-      setMessage("Video saved. The worker will loop it as this camera.");
+      setMessage("Video saved. The worker will loop it as this camera. Zones stay where they were drawn; check them in Draw zones against the new view.");
     } catch (err) {
       setUpload("");
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -186,15 +195,16 @@ export default function CameraDetailPage() {
 
   function simulate() {
     api(`/api/cameras/${params.id}/simulate`, { method: "POST" })
-      .then(() => toast("Simulation queued · a person will stand inside the zones for a few seconds"))
+      .then(() => toast("Simulation queued · people will stand inside the zones for a few seconds"))
       .catch((err) => setError(err.message));
   }
 
   const isLive = camera ? LIVE.has(camera.status) : false;
   const pausedZones = (live?.zones || []).filter((zone) => PAUSED_STATES.has(zone.state));
   const tracks = live?.tracks || [];
-  const people = tracks.filter((track) => track.class_name === "person");
-  const violations = people.filter((track) => verdict(track).chip === "Violation").length;
+  const violations = tracks.filter((track) => verdict(track).chip === "Violation").length;
+  // A fixed order, by id, so rows do not swap places every second as verdicts change. Vehicles go last.
+  const ordered = [...tracks].sort((a, b) => Number(a.class_name !== "person") - Number(b.class_name !== "person") || Number(a.track_id) - Number(b.track_id));
   const clock = now ? formatTime(now) : "";
   const stats = [
     ["Measured", `${live?.ai_fps ?? 0} FPS`],
@@ -297,49 +307,42 @@ export default function CameraDetailPage() {
         <div className="flex min-w-0 max-w-full flex-[1_1_300px] flex-col gap-5">
           <section className="panel-dark flex flex-col gap-3.5 p-5">
             <div className="relative flex items-baseline gap-2.5">
-              <h2 className="flex-1 text-base font-semibold text-fog-50">People in view</h2>
-              <span className="font-display text-2xl font-bold text-white">{people.length}</span>
+              <h2 className="flex-1 text-base font-semibold text-fog-50">People and vehicles</h2>
+              <span className="font-display text-2xl font-bold text-white">{tracks.length}</span>
             </div>
-            {tracks.length === 0 ? <p className="text-[13.5px] text-fog-300">No person detected on the latest frame.</p> : null}
-            {tracks.map((track) => {
-              const person = track.class_name === "person";
-              const view = person ? verdict(track) : null;
-              const status = person ? (track.checks?.length ? track.checks.map((check) => check.text).join(" · ") : "Not in a zone with a rule") : "Vehicle";
-              return (
-                <div key={track.track_id + track.class_name} className="relative flex items-center gap-3 rounded-lg border border-ink-edge bg-ink-raised p-3">
-                  <span className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-md border-2 font-mono text-[11px] text-fog-100 ${view?.box || "border-fog-500"}`}>{track.track_id}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-fog-50">{person ? `Person ${track.track_id}` : `Forklift ${track.track_id}`}</span>
-                    <span className="block text-[12.5px] text-fog-300">{status} · {Math.round((track.confidence || 0) * 100)}% confidence</span>
-                  </span>
-                  {view ? <span className={`whitespace-nowrap rounded-full px-2.5 py-[3px] text-[11.5px] font-semibold ${view.style}`}>{view.chip}</span> : null}
-                </div>
-              );
-            })}
+            {/* A fixed height that scrolls, so people coming and going never move the panels below. */}
+            <div className="relative -mr-2 flex h-[336px] flex-col gap-2 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
+              {tracks.length === 0 ? <p className="text-[13.5px] text-fog-300">No person detected on the latest frame.</p> : null}
+              {ordered.map((track) => {
+                const view = verdict(track);
+                const checks = track.checks || [];
+                return (
+                  <div key={track.track_id + track.class_name} className="shrink-0 rounded-lg border border-ink-edge bg-ink-raised px-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className={`grid h-6 min-w-[30px] shrink-0 place-items-center rounded border-2 px-1 font-mono text-[11px] text-fog-100 ${view?.box || "border-fog-500"}`}>{track.track_id}</span>
+                      <span className="truncate text-sm font-semibold text-fog-50">{trackName(track)}</span>
+                      <span className="font-mono text-[11px] text-fog-500">{Math.round((track.confidence || 0) * 100)}%</span>
+                      {view ? <span className={`ml-auto whitespace-nowrap rounded-full px-2 py-[2px] text-[11px] font-semibold ${view.style}`}>{view.chip}</span> : null}
+                    </div>
+                    {checks.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {checks.map((check) => (
+                          <span key={check.text} title={check.text} className={`whitespace-nowrap rounded px-1.5 py-[2px] text-[11.5px] font-semibold ${CHECK_CHIPS[check.state].style}`}>
+                            {CHECK_CHIPS[check.state].mark} {check.item && ITEM_NAMES[check.item] ? ITEM_NAMES[check.item] : check.text}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 text-[12.5px] text-fog-300">Not in a zone with a rule</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
             <p className="relative font-mono text-[11px] leading-relaxed text-fog-500">
               {camera?.enabled === false ? "Camera disabled — detections are from the last frame received." : `Latest frame · ${clock} · ${violations} ${violations === 1 ? "violation" : "violations"}`}
             </p>
           </section>
-
-          {live?.coffee?.length ? (
-            <section className="panel p-5">
-              <h2 className="text-base font-semibold">Coffee on the belt</h2>
-              <div className="mt-3 space-y-3">
-                {live.coffee.map((line) => (
-                  <div key={line.zone_id} className="rounded-lg bg-subtle px-3 py-2.5 text-sm">
-                    <div className="font-semibold">{line.name}</div>
-                    <div className="text-graphite-500">{COFFEE_STAGE_LABELS[line.stage] || line.stage}</div>
-                    <div className="mt-1 font-mono text-[12.5px]">{line.total} counted · {line.in_frame} in frame{line.stage === "count" ? "" : ` · ${Math.round((line.defect_rate || 0) * 100)}% defects in the last ${line.window_total}`}</div>
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {Object.entries(line.by_class || {}).map(([name, count]) => (
-                        <Badge key={name} value={`${BEAN_LABELS[name] || name} ${count}`} tone={name === "good" || name === "bean" ? "green" : "red"} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
 
           {live?.zones?.length ? (
             <section className="panel p-5">

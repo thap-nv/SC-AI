@@ -88,7 +88,7 @@ def test_paused_zone_raises_nothing_and_is_not_drawn():
     placed = place_zone(raw, aligner.update(scene(2), [raw], now=1.0)["z1"])
     assert placed["view_state"] == VIEW_CHANGED
     rule = {"id": "r1", "zone_id": "z1", "condition_type": "PERSON_INSIDE", "enabled": True}
-    assert track_checks([rule], [placed], (0.4, 0.4, 0.5, 0.7), "YES", "CORRECT") == []
+    assert track_checks([rule], [placed], (0.4, 0.4, 0.5, 0.7), {}) == []
     frame = scene(2)
     assert np.array_equal(annotate(frame, [placed], []), frame)
 

@@ -26,3 +26,17 @@ def test_hog_detection_does_not_require_visible_skin_or_face():
     people = detector.detect(image, [], 0, False)
     assert len(people) == 1
     assert people[0]['bbox_xyxy'] == [100, 30, 164, 158]
+
+
+def test_tracker_ignores_a_one_frame_flicker_and_confirms_a_steady_person():
+    from app.tracker import PersonTracker
+
+    tracker = PersonTracker(frame_rate=10)
+    person = {"class_id": 0, "confidence": 0.9, "bbox_xyxy": [100.0, 100.0, 160.0, 300.0]}
+    flicker = {"class_id": 0, "confidence": 0.9, "bbox_xyxy": [400.0, 100.0, 460.0, 300.0]}
+    assert tracker.update([person, flicker]) == []
+    assert tracker.update([person]) == []
+    assert tracker.update([person]) == []
+    confirmed = tracker.update([person])
+    assert [track["bbox_xyxy"][0] for track in confirmed] == [100.0]
+    assert all(int(track["track_id"]) >= 0 for track in confirmed)

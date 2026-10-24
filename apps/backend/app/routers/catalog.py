@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.deps import get_current_user, require
-from app.models import Camera, Factory, Incident, IncidentEvidence, OperatorFeedback, Rule, User, Zone, AIModel
+from app.models import Camera, Factory, Incident, Rule, User, Zone, AIModel
 from app.schemas import CameraIn, CameraOut, CameraUpdate, FactoryOut, ModelOut, RuleIn, RuleOut, RuleUpdate, ZoneIn, ZoneOut, ZoneUpdate
-from app.services import camera_out, read_live, rule_out
+from app.services import camera_out, delete_camera_data, read_live, rule_out
 from app.storage import get_bytes, put_bytes
 from app.validators import CONDITION_TYPES, EVENT_TYPES, SEVERITIES, STREAM_TYPES, ZONE_TYPES, validate_polygon
 
@@ -79,11 +79,23 @@ def update_camera(camera_id: str, body: CameraUpdate, db: Session = Depends(get_
         _check(data["stream_type"], STREAM_TYPES, "stream type")
     if "stream_url" in data and data["stream_url"] and "***" in data["stream_url"]:
         data.pop("stream_url")
+    new_source = any(field in data and data[field] != getattr(camera, field) for field in ("stream_type", "stream_url"))
     for field, value in data.items():
         setattr(camera, field, value)
+    if new_source:
+        _unlink_zones(db, camera)
     db.commit()
     db.refresh(camera)
     return camera_out(camera)
+
+
+def _unlink_zones(db: Session, camera: Camera) -> None:
+    """A new video or stream is a new view, and frames from the old source can never match it.
+
+    Zones stop following those frames and stay where they were drawn, instead of pausing for good.
+    """
+    for zone in db.query(Zone).filter(Zone.camera_id == camera.id, Zone.reference_key.isnot(None)).all():
+        zone.reference_key = None
 
 
 @router.delete("/cameras/{camera_id}")
@@ -91,14 +103,7 @@ def delete_camera(camera_id: str, db: Session = Depends(get_db), _: User = Depen
     camera = db.get(Camera, camera_id)
     if camera is None:
         raise HTTPException(status_code=404, detail="Camera not found")
-    incident_ids = [row[0] for row in db.query(Incident.id).filter(Incident.camera_id == camera.id).all()]
-    if incident_ids:
-        db.query(OperatorFeedback).filter(OperatorFeedback.incident_id.in_(incident_ids)).delete(synchronize_session=False)
-        db.query(IncidentEvidence).filter(IncidentEvidence.incident_id.in_(incident_ids)).delete(synchronize_session=False)
-        db.query(Incident).filter(Incident.id.in_(incident_ids)).delete(synchronize_session=False)
-    db.query(Rule).filter(Rule.camera_id == camera.id).delete(synchronize_session=False)
-    db.query(Zone).filter(Zone.camera_id == camera.id).delete(synchronize_session=False)
-    db.delete(camera)
+    delete_camera_data(db, camera)
     db.commit()
     return {"deleted": True}
 
@@ -126,6 +131,7 @@ async def upload_video(
         raise HTTPException(status_code=503, detail="Video storage is unavailable")
     camera.stream_type = "FILE"
     camera.stream_url = key
+    _unlink_zones(db, camera)
     db.commit()
     db.refresh(camera)
     return camera_out(camera)
@@ -160,7 +166,6 @@ def camera_live(camera_id: str, db: Session = Depends(get_db), _: User = Depends
         "source_state": live.get("source_state"),
         "tracks": live.get("tracks") or [],
         "zones": live.get("zones") or [],
-        "coffee": live.get("coffee") or [],
     }
 
 

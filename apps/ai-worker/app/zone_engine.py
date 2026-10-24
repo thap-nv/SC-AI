@@ -2,6 +2,9 @@
 
 from shapely.geometry import Point, Polygon
 
+# Feet below this line are out of view: the box reaches the bottom edge of the frame.
+FRAME_BOTTOM = 0.98
+
 
 def as_polygon(points: list[list[float]] | None) -> Polygon | None:
     if not points or len(points) < 3:
@@ -34,9 +37,12 @@ def bbox_foot_in_polygon(points: list[list[float]] | None, bbox: tuple[float, fl
 
     The box centre sits at waist height and, seen from a raised camera, projects onto
     the floor behind the person.
+
+    A box cut off by the bottom of the frame has its feet out of view, and a zone drawn
+    corner to corner stops just short of the edge. The lowest point still in view stands in.
     """
     x1, _, x2, y2 = bbox
-    return point_in_polygon(points, (float(x1) + float(x2)) / 2.0, float(y2))
+    return point_in_polygon(points, (float(x1) + float(x2)) / 2.0, min(float(y2), FRAME_BOTTOM))
 
 
 def representative_point(points: list[list[float]] | None) -> tuple[float, float] | None:

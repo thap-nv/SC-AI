@@ -7,7 +7,7 @@ import Shell from "@/components/shell";
 import { ErrorText, GhostButton, PrimaryButton, RecDot, Snapshot, StatusPill, Switch } from "@/components/ui";
 import { api, Camera, getUser, Rule } from "@/lib/api";
 
-const EMPTY = { code: "", name: "", area: "Packing Area", stream_type: "FILE", stream_url: "", ai_fps: 25, enabled: true, assigned_worker: "" };
+const EMPTY = { code: "", name: "", area: "Workshop", stream_type: "FILE", stream_url: "", ai_fps: 25, enabled: true, assigned_worker: "" };
 const LIVE = new Set(["ONLINE", "AI_PROCESSING"]);
 
 export default function CamerasPage() {

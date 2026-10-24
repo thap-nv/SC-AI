@@ -8,13 +8,14 @@ import { api, getUser, Rule, Zone } from "@/lib/api";
 import { CONDITION_LABELS, eventLabel, ZONE_LABELS } from "@/lib/labels";
 
 const TEMPLATES = [
-  { label: "Hairnet required", event_type: "HAIRNET_VIOLATION", condition_type: "HAIRNET_MISSING", severity: "HIGH", min_duration_s: 2 },
-  { label: "Uniform required", event_type: "UNIFORM_VIOLATION", condition_type: "UNIFORM_INCORRECT", severity: "HIGH", min_duration_s: 2 },
-  { label: "Restricted area", event_type: "RESTRICTED_AREA_INTRUSION", condition_type: "PERSON_INSIDE", severity: "HIGH", min_duration_s: 1 },
+  { label: "Helmet required", event_type: "HELMET_VIOLATION", condition_type: "HELMET_MISSING", severity: "HIGH", min_duration_s: 2 },
+  { label: "Protective clothing required", event_type: "CLOTHING_VIOLATION", condition_type: "CLOTHING_MISSING", severity: "HIGH", min_duration_s: 2 },
+  { label: "Mask required", event_type: "MASK_VIOLATION", condition_type: "MASK_MISSING", severity: "MEDIUM", min_duration_s: 2 },
+  { label: "Restricted area: no people", event_type: "RESTRICTED_AREA_INTRUSION", condition_type: "PERSON_INSIDE", severity: "HIGH", min_duration_s: 1 },
+  { label: "Restricted area: no vehicles except forklifts", event_type: "VEHICLE_IN_RESTRICTED_AREA", condition_type: "VEHICLE_INSIDE", severity: "HIGH", min_duration_s: 1 },
   { label: "Machine danger zone", event_type: "MACHINE_DANGER_ZONE_INTRUSION", condition_type: "PERSON_INSIDE", severity: "CRITICAL", min_duration_s: 1 },
   { label: "Forklift lane", event_type: "PEDESTRIAN_IN_FORKLIFT_ZONE", condition_type: "PERSON_INSIDE", severity: "CRITICAL", min_duration_s: 1 },
-  { label: "Green bean defect rate", event_type: "GREEN_COFFEE_DEFECT_RATE", condition_type: "DEFECT_RATE", severity: "HIGH", min_duration_s: 2 },
-  { label: "Roasted bean defect rate", event_type: "ROASTED_COFFEE_DEFECT_RATE", condition_type: "DEFECT_RATE", severity: "HIGH", min_duration_s: 2 },
+  { label: "WHO 6-step hand washing", event_type: "HANDWASH_INCOMPLETE", condition_type: "HANDWASH_STEPS_MISSING", severity: "MEDIUM", min_duration_s: 3 },
 ];
 
 export default function RulesPage() {
@@ -98,14 +99,18 @@ export default function RulesPage() {
               </select>
             </label>
             <div className="grid grid-cols-2 gap-2.5">
-              <label className={label}>Min duration (s)<input className="field-dark" type="number" min={0} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} /></label>
+              <label className={label}>{chosen.condition_type === "HANDWASH_STEPS_MISSING" ? "Min per step (s)" : "Min duration (s)"}<input className="field-dark" type="number" min={0} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} /></label>
               <label className={label}>Cooldown (s)<input className="field-dark" type="number" min={0} value={cooldown} onChange={(e) => setCooldown(Number(e.target.value))} /></label>
             </div>
             <p className="text-xs leading-normal text-fog-500">
               {CONDITION_LABELS[chosen.condition_type]}.{" "}
-              {chosen.condition_type === "DEFECT_RATE"
-                ? "Opens when the recent share of defective beans stays above 15%."
-                : "Unknown hairnet or uniform results do not raise an alert."}
+              {chosen.condition_type === "PERSON_INSIDE"
+                ? "Opens when a person's feet stay inside the zone for the minimum duration. Someone riding a vehicle, such as a forklift driver, is not counted."
+                : chosen.condition_type === "VEHICLE_INSIDE"
+                  ? "Opens when a car, truck, bus or motorcycle stays inside the zone. Forklifts are allowed. A vehicle whose type is not known yet does not raise an alert."
+                  : chosen.condition_type === "HANDWASH_STEPS_MISSING"
+                    ? "Checked once per wash, when the hands leave the sink. Each step must be seen for the minimum time. Steps the model cannot recognise are never reported missing."
+                    : "Only a clear “missing” result raises an alert. Unknown, such as a turned-away face or hidden feet, does not."}
             </p>
             <button type="submit" className="bg-brand-500 py-3 font-bold text-white hover:bg-brand-600">Save rule</button>
           </form>

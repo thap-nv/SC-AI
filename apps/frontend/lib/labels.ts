@@ -1,41 +1,23 @@
 export const EVENT_LABELS: Record<string, string> = {
-  RESTRICTED_AREA_INTRUSION: "Restricted area",
-  HAIRNET_VIOLATION: "Missing hairnet",
-  UNIFORM_VIOLATION: "Incorrect uniform",
+  HELMET_VIOLATION: "Missing helmet",
+  CLOTHING_VIOLATION: "Missing protective clothing",
+  SHOES_VIOLATION: "Missing safety shoes",
+  MASK_VIOLATION: "Missing mask",
+  RESTRICTED_AREA_INTRUSION: "Person in restricted area",
+  VEHICLE_IN_RESTRICTED_AREA: "Vehicle in restricted area",
   MACHINE_DANGER_ZONE_INTRUSION: "Machine danger zone",
   PEDESTRIAN_IN_FORKLIFT_ZONE: "Pedestrian in forklift lane",
-  GREEN_COFFEE_DEFECT_RATE: "Green bean defect rate",
-  ROASTED_COFFEE_DEFECT_RATE: "Roasted bean defect rate",
+  HANDWASH_INCOMPLETE: "Hand wash incomplete",
 };
 
 export const ZONE_LABELS: Record<string, string> = {
+  PPE_ZONE: "PPE required area",
   RESTRICTED_AREA: "Restricted area",
   MACHINE_DANGER_ZONE: "Machine danger zone",
   FORKLIFT_LANE: "Forklift lane",
   PRODUCTION_ZONE: "Production zone",
   PACKING_ZONE: "Packing zone",
-  GREEN_COFFEE_LINE: "Green coffee belt",
-  ROASTED_COFFEE_LINE: "Roasted coffee belt",
-  COFFEE_COUNT_LINE: "Coffee count belt",
-};
-
-export const BEAN_LABELS: Record<string, string> = {
-  good: "Good",
-  black: "Black",
-  broken: "Broken",
-  fade: "Fade",
-  sour: "Sour",
-  quaker: "Quaker",
-  burnt: "Burnt",
-  insect: "Insect",
-  mould: "Mould",
-  bean: "Bean",
-};
-
-export const COFFEE_STAGE_LABELS: Record<string, string> = {
-  green: "Green coffee",
-  roasted: "Roasted coffee",
-  count: "Count only",
+  HANDWASH_STATION: "Hand-wash station",
 };
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -51,9 +33,12 @@ export const STATUS_LABELS: Record<string, string> = {
 
 export const CONDITION_LABELS: Record<string, string> = {
   PERSON_INSIDE: "Person inside zone",
-  HAIRNET_MISSING: "Hairnet missing",
-  UNIFORM_INCORRECT: "Incorrect uniform",
-  DEFECT_RATE: "Defect rate on the belt",
+  VEHICLE_INSIDE: "Vehicle inside zone, forklifts allowed",
+  HELMET_MISSING: "Helmet missing",
+  CLOTHING_MISSING: "Protective clothing missing",
+  SHOES_MISSING: "Safety shoes missing",
+  MASK_MISSING: "Mask missing",
+  HANDWASH_STEPS_MISSING: "WHO hand-washing steps missing",
 };
 
 export function eventLabel(value: string) {

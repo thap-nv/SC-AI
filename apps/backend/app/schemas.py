@@ -226,4 +226,3 @@ class HeartbeatIn(BaseModel):
     source_state: str = ""
     tracks: list[dict] = []
     zones: list[dict] = []
-    coffee: list[dict] = []

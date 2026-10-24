@@ -1,29 +1,88 @@
 {
-  "roles": ["ADMIN", "SAFETY_MANAGER", "VIEWER"],
-  "incident_status": ["NEW", "CONFIRMED", "FALSE_POSITIVE", "RESOLVED"],
-  "severity": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+  "roles": [
+    "ADMIN",
+    "SAFETY_MANAGER",
+    "VIEWER"
+  ],
+  "incident_status": [
+    "NEW",
+    "CONFIRMED",
+    "FALSE_POSITIVE",
+    "RESOLVED"
+  ],
+  "severity": [
+    "LOW",
+    "MEDIUM",
+    "HIGH",
+    "CRITICAL"
+  ],
   "zone_types": [
+    "PPE_ZONE",
     "RESTRICTED_AREA",
     "MACHINE_DANGER_ZONE",
     "FORKLIFT_LANE",
     "PRODUCTION_ZONE",
     "PACKING_ZONE",
-    "GREEN_COFFEE_LINE",
-    "ROASTED_COFFEE_LINE",
-    "COFFEE_COUNT_LINE"
+    "HANDWASH_STATION"
   ],
   "event_types": [
+    "HELMET_VIOLATION",
+    "CLOTHING_VIOLATION",
+    "SHOES_VIOLATION",
+    "MASK_VIOLATION",
     "RESTRICTED_AREA_INTRUSION",
-    "HAIRNET_VIOLATION",
-    "UNIFORM_VIOLATION",
+    "VEHICLE_IN_RESTRICTED_AREA",
     "MACHINE_DANGER_ZONE_INTRUSION",
     "PEDESTRIAN_IN_FORKLIFT_ZONE",
-    "GREEN_COFFEE_DEFECT_RATE",
-    "ROASTED_COFFEE_DEFECT_RATE"
+    "HANDWASH_INCOMPLETE"
   ],
-  "condition_types": ["PERSON_INSIDE", "HAIRNET_MISSING", "UNIFORM_INCORRECT", "DEFECT_RATE"],
+  "condition_types": [
+    "PERSON_INSIDE",
+    "VEHICLE_INSIDE",
+    "HELMET_MISSING",
+    "CLOTHING_MISSING",
+    "SHOES_MISSING",
+    "MASK_MISSING",
+    "HANDWASH_STEPS_MISSING"
+  ],
   "ppe": {
-    "hairnet": ["YES", "NO", "UNKNOWN"],
-    "uniform": ["CORRECT", "INCORRECT", "UNKNOWN"]
-  }
+    "helmet": [
+      "YES",
+      "NO",
+      "UNKNOWN"
+    ],
+    "clothing": [
+      "YES",
+      "NO",
+      "UNKNOWN"
+    ],
+    "shoes": [
+      "YES",
+      "NO",
+      "UNKNOWN"
+    ],
+    "mask": [
+      "YES",
+      "NO",
+      "UNKNOWN"
+    ]
+  },
+  "vehicle_types": [
+    "car",
+    "truck",
+    "bus",
+    "motorcycle",
+    "forklift"
+  ],
+  "handwash_steps": [
+    "palms",
+    "backs",
+    "interlaced",
+    "fingers",
+    "thumbs",
+    "fingertips"
+  ],
+  "allowed_vehicles": [
+    "forklift"
+  ]
 }

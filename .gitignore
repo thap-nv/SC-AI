@@ -14,11 +14,11 @@ models/*.onnx
 runs/
 weights/
 /yolov8n.pt
-data/coffee-yolo/labels/**/*.cache
-data/coffee-yolo/_sources/
-data/coffee-yolo/images/**/*.jpg
-data/coffee-yolo/images/**/*.png
-data/coffee-yolo/labels/**/*.txt
+data/ppe-yolo/labels/**/*.cache
+data/ppe-yolo/_sources/
+data/ppe-yolo/images/**/*.jpg
+data/ppe-yolo/images/**/*.png
+data/ppe-yolo/labels/**/*.txt
 *.tsbuildinfo
 .tmp_pricing/
 .artifact_xlsx/

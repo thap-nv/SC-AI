@@ -1,0 +1,23 @@
+{
+  "video": "sample-data/videos/handwash - wrong.mp4",
+  "note": "Two rushed washes, 2-3.5 s a step. The first has no step 3 or 6, the second no step 5. Labelled by eye from frames every 0.5 s; unsure marks spans read with less confidence.",
+  "crop": [0.22, 0.0, 0.82, 1.0],
+  "segments": [
+    [0.0, 0.5, "none"],
+    [1.0, 8.0, "other"],
+    [8.5, 11.5, "palms"],
+    [12.5, 15.5, "backs"],
+    [16.0, 18.0, "fingers"],
+    [19.5, 23.0, "thumbs", "unsure"],
+    [23.5, 33.5, "other"],
+    [34.0, 36.5, "none"],
+    [37.0, 43.0, "other"],
+    [43.5, 46.5, "palms"],
+    [48.5, 51.0, "backs"],
+    [52.0, 54.0, "interlaced"],
+    [56.0, 58.0, "fingers"],
+    [60.0, 62.5, "fingertips", "unsure"],
+    [63.0, 75.5, "other"],
+    [76.0, 77.0, "none"]
+  ]
+}

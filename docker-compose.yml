@@ -57,7 +57,7 @@ services:
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-720}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-poc-internal-token}
       AI_MODE: ${AI_MODE:-DEMO}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-admin123}
       DEMO_SAFETY_PASSWORD: ${DEMO_SAFETY_PASSWORD:-safety123}
       DEMO_VIEWER_PASSWORD: ${DEMO_VIEWER_PASSWORD:-viewer123}
@@ -89,6 +89,13 @@ services:
       AI_THREADS: ${AI_THREADS:-2}
       MODEL_PATH: /models
       DEFAULT_AI_FPS: ${DEFAULT_AI_FPS:-5}
+      PPE_INTERVAL_S: ${PPE_INTERVAL_S:-0.3}
+      # Hand-washing steps never checked. Set "fingers" when only the reference handwash.onnx is installed.
+      HANDWASH_SKIP_STEPS: ${HANDWASH_SKIP_STEPS-}
+      # Frame scale for the reference handwash.onnx only: 0.6 for the site's sink camera, 1.0 for one as far away as the reference.
+      HANDWASH_SCALE: ${HANDWASH_SCALE:-0.6}
+      # Seconds without hands that end a wash.
+      HANDWASH_GAP_S: ${HANDWASH_GAP_S:-2.5}
       WORKER_ID: ${WORKER_ID:-worker-01}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-safetyadmin}
@@ -116,7 +123,7 @@ services:
     build:
       context: ./apps/frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000}
     ports:
       - "3000:3000"
     depends_on:

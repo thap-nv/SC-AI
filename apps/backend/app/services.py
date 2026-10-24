@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Incident, IncidentEvidence, OperatorFeedback
+from app.models import Incident, IncidentEvidence, OperatorFeedback, Rule, Zone
 from app.redis_client import get_redis, publish
 from app.schemas import CameraOut, FeedbackOut, IncidentOut, RuleOut
 from app.storage import put_bytes
@@ -95,6 +95,18 @@ def camera_out(camera, live: dict | None = None) -> CameraOut:
     )
 
 
+def delete_camera_data(db: Session, camera) -> None:
+    """Removes a camera with its zones, rules, incidents, evidence rows and reviews. The caller commits."""
+    incident_ids = [row[0] for row in db.query(Incident.id).filter(Incident.camera_id == camera.id).all()]
+    if incident_ids:
+        db.query(OperatorFeedback).filter(OperatorFeedback.incident_id.in_(incident_ids)).delete(synchronize_session=False)
+        db.query(IncidentEvidence).filter(IncidentEvidence.incident_id.in_(incident_ids)).delete(synchronize_session=False)
+        db.query(Incident).filter(Incident.id.in_(incident_ids)).delete(synchronize_session=False)
+    db.query(Rule).filter(Rule.camera_id == camera.id).delete(synchronize_session=False)
+    db.query(Zone).filter(Zone.camera_id == camera.id).delete(synchronize_session=False)
+    db.delete(camera)
+
+
 def rule_out(rule) -> RuleOut:
     return RuleOut(
         id=rule.id,
@@ -157,8 +169,6 @@ def notify(incident: Incident) -> None:
 
 
 def create_worker_incident(db: Session, body) -> tuple[Incident, str]:
-    from app.models import Rule
-
     rule = db.get(Rule, body.rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")

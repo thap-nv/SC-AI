@@ -5,25 +5,71 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import AIModel, AIModelDeployment, Camera, Factory, Incident, OperatorFeedback, Rule, User, Zone
 from app.security import hash_password
+from app.services import delete_camera_data
 
-PACKING = [[0.40, 0.20], [0.90, 0.18], [0.92, 0.85], [0.38, 0.88]]
-PRODUCTION = [[0.15, 0.22], [0.72, 0.20], [0.76, 0.82], [0.12, 0.84]]
-MACHINE = [[0.42, 0.28], [0.82, 0.26], [0.86, 0.78], [0.40, 0.80]]
-RESTRICTED = [[0.48, 0.12], [0.92, 0.10], [0.94, 0.62], [0.46, 0.66]]
-FORKLIFT = [[0.08, 0.58], [0.88, 0.56], [0.90, 0.96], [0.06, 0.98]]
-GREEN_BELT = [[0.08, 0.05], [0.92, 0.05], [0.92, 0.30], [0.08, 0.30]]
-ROAST_BELT = [[0.08, 0.36], [0.92, 0.36], [0.92, 0.62], [0.08, 0.62]]
-COUNT_BELT = [[0.08, 0.68], [0.92, 0.68], [0.92, 0.96], [0.08, 0.96]]
+FACTORY_CODE = "factory-poc"
+FACTORY_NAME = "Factory POC"
+WORKSHOP_CAMERA = "CAM-WORKSHOP-01"
+WORKSHOP_FLOOR = [[0.04, 0.42], [0.96, 0.40], [0.98, 0.90], [0.02, 0.92]]
+RESTRICTED_CAMERA = "CAM-RESTRICTED-01"
+# A placeholder lane in the middle of the frame. Redraw it on the uploaded video.
+RESTRICTED_LANE = [[0.34, 0.38], [0.60, 0.38], [0.80, 0.92], [0.22, 0.92]]
+# Nobody may walk in. Vehicles may not drive in, except forklifts.
+RESTRICTED_RULES = [
+    ("No entry for people", "RESTRICTED_AREA_INTRUSION", "PERSON_INSIDE", "HIGH"),
+    ("No entry for vehicles except forklifts", "VEHICLE_IN_RESTRICTED_AREA", "VEHICLE_INSIDE", "HIGH"),
+]
+HANDWASH_CAMERA = "CAM-HANDWASH-01"
+# A placeholder sink in the middle of the frame. Redraw it on the uploaded video, around where hands are washed.
+HANDWASH_SINK = [[0.30, 0.15], [0.70, 0.15], [0.70, 0.65], [0.30, 0.65]]
+# Checked once per wash. The rule's minimum duration is how long each step must be seen.
+HANDWASH_RULE = ("WHO 6-step hand washing", "HANDWASH_INCOMPLETE", "HANDWASH_STEPS_MISSING", "MEDIUM")
+HANDWASH_MODEL = "handwash-detector"
+# name, event type, condition, severity. Safety shoes are left out: they cannot be told apart on CCTV without a trained model.
+PPE_RULES = [
+    ("Helmet required", "HELMET_VIOLATION", "HELMET_MISSING", "HIGH"),
+    ("Protective clothing required", "CLOTHING_VIOLATION", "CLOTHING_MISSING", "HIGH"),
+    ("Mask required", "MASK_VIOLATION", "MASK_MISSING", "MEDIUM"),
+]
+MODELS = [
+    ("person-detector", "v1.0", "PERSON_DETECTOR", "ACTIVE", "OpenCV HOG people detector (Apache-2.0). Used in REAL mode when person.onnx is not mounted. DEMO mode uses a scripted person instead."),
+    (
+        "ppe-detector",
+        "v0.2",
+        "PPE_DETECTOR",
+        "DEMO",
+        "Helmet, protective clothing and mask on each person. DEMO mode reads the scripted outfit. "
+        "Without ppe.onnx, REAL mode reads colours: a hard hat above the face, a coverall from torso to legs, and a mask over the chin when face.onnx finds the face.",
+    ),
+    ("forklift-detector", "v0.1", "FORKLIFT_DETECTOR", "DEMO", "Optional forklift box. The forklift-lane alert is raised from a person inside the lane and does not need this model."),
+    (
+        HANDWASH_MODEL,
+        "v0.1",
+        "HANDWASH_DETECTOR",
+        "DEMO",
+        "WHO hand-washing steps, seen from above the sink. DEMO mode scripts the washes. "
+        "REAL mode uses handwash_steps.onnx, a classifier of all six steps trained on the site's own clips, "
+        "else handwash.onnx, the reference YOLOv8n-seg of Özakar and Gedikli (2025), which checks backs of hands, thumbs and fingertips.",
+    ),
+]
+
+# The coffee-plant demo this POC started from. Its cameras and models are retired on first start.
+LEGACY_FACTORY_CODE = "coffee-poc"
+LEGACY_CAMERAS = ("CAM-PACK-01", "CAM-PROD-01", "CAM-MACHINE-01", "CAM-WAREHOUSE-01", "CAM-BEAN-01")
+LEGACY_MODELS = ("coffee-line", "ppe-classifier")
 
 
 def seed(db: Session) -> None:
-    existing = db.query(Factory).filter(Factory.code == "coffee-poc").first()
-    if existing:
-        if _ensure_bean_line(db, existing):
-            db.commit()
+    existing = db.query(Factory).filter(Factory.code == FACTORY_CODE).first()
+    if existing is not None:
+        _add_handwash_once(db, existing)
+        return
+    legacy = db.query(Factory).filter(Factory.code == LEGACY_FACTORY_CODE).first()
+    if legacy is not None:
+        _leave_coffee_demo(db, legacy)
         return
     settings = get_settings()
-    factory = Factory(name="Coffee Factory POC", code="coffee-poc", timezone="Asia/Ho_Chi_Minh")
+    factory = Factory(name=FACTORY_NAME, code=FACTORY_CODE, timezone="Asia/Ho_Chi_Minh")
     db.add(factory)
     db.flush()
 
@@ -33,58 +79,26 @@ def seed(db: Session) -> None:
         "viewer": User(username="viewer", full_name="Shift Viewer", role="VIEWER", password_hash=hash_password(settings.demo_viewer_password)),
     }
     db.add_all(users.values())
-
-    cameras = {
-        "pack": Camera(factory_id=factory.id, code="CAM-PACK-01", name="Packing Area Camera 01", area="Packing Area", stream_type="FILE", stream_url="", enabled=True, ai_fps=25),
-        "prod": Camera(factory_id=factory.id, code="CAM-PROD-01", name="Production Area Camera 01", area="Production Area", stream_type="FILE", stream_url="", enabled=True, ai_fps=25),
-        "machine": Camera(factory_id=factory.id, code="CAM-MACHINE-01", name="Machine Area Camera 01", area="Machine Area", stream_type="FILE", stream_url="", enabled=True, ai_fps=25),
-        "warehouse": Camera(factory_id=factory.id, code="CAM-WAREHOUSE-01", name="Warehouse Camera 01", area="Warehouse", stream_type="FILE", stream_url="", enabled=True, ai_fps=25),
-    }
-    db.add_all(cameras.values())
-    db.flush()
-
-    zones = {
-        "packing": Zone(factory_id=factory.id, camera_id=cameras["pack"].id, name="Packing Zone A", zone_type="PACKING_ZONE", polygon=PACKING),
-        "production": Zone(factory_id=factory.id, camera_id=cameras["prod"].id, name="Production Zone A", zone_type="PRODUCTION_ZONE", polygon=PRODUCTION),
-        "machine": Zone(factory_id=factory.id, camera_id=cameras["machine"].id, name="Machine A Danger Zone", zone_type="MACHINE_DANGER_ZONE", polygon=MACHINE),
-        "restricted": Zone(factory_id=factory.id, camera_id=cameras["warehouse"].id, name="Restricted Zone A", zone_type="RESTRICTED_AREA", polygon=RESTRICTED),
-        "forklift": Zone(factory_id=factory.id, camera_id=cameras["warehouse"].id, name="Forklift Lane", zone_type="FORKLIFT_LANE", polygon=FORKLIFT),
-    }
-    db.add_all(zones.values())
-    db.flush()
-
-    rules = [
-        _rule(factory, cameras["pack"], zones["packing"], "Packing hairnet", "HAIRNET_VIOLATION", "HAIRNET_MISSING", 2000, "HIGH"),
-        _rule(factory, cameras["prod"], zones["production"], "Production uniform", "UNIFORM_VIOLATION", "UNIFORM_INCORRECT", 2000, "HIGH"),
-        _rule(factory, cameras["machine"], zones["machine"], "Machine A danger zone", "MACHINE_DANGER_ZONE_INTRUSION", "PERSON_INSIDE", 1000, "CRITICAL"),
-        _rule(factory, cameras["warehouse"], zones["restricted"], "Restricted Zone A", "RESTRICTED_AREA_INTRUSION", "PERSON_INSIDE", 1000, "HIGH"),
-        _rule(factory, cameras["warehouse"], zones["forklift"], "Forklift lane", "PEDESTRIAN_IN_FORKLIFT_ZONE", "PERSON_INSIDE", 1000, "CRITICAL"),
-    ]
-    db.add_all(rules)
-    db.flush()
-
-    person = AIModel(name="person-detector", version="v1.0", model_type="PERSON_DETECTOR", status="ACTIVE", description="OpenCV HOG people detector (Apache-2.0). Used in REAL mode when person.onnx is not mounted. DEMO mode uses a scripted person instead.")
-    ppe = AIModel(name="ppe-classifier", version="v0.1", model_type="PPE_CLASSIFIER", status="DEMO", description="Hairnet and uniform adapter. DEMO mode labels a person from the zone type. Mount ppe.onnx to classify a real crop.")
-    forklift = AIModel(name="forklift-detector", version="v0.1", model_type="FORKLIFT_DETECTOR", status="DEMO", description="Optional forklift box. The forklift-lane alert is raised from a person inside the lane and does not need this model.")
-    db.add_all([person, ppe, forklift])
-    db.flush()
-    for model in (person, ppe, forklift):
-        db.add(AIModelDeployment(model_id=model.id, factory_id=factory.id, status="ACTIVE", notes="POC deployment"))
-    _ensure_bean_line(db, factory)
+    _ensure_models(db, factory)
+    camera, zone, rules = _add_workshop_camera(db, factory)
+    _add_restricted_camera(db, factory)
+    _add_handwash_camera(db, factory)
+    by_event = {rule.event_type: rule for rule in rules}
 
     now = datetime.now(timezone.utc)
     samples = [
-        (cameras["warehouse"], zones["restricted"], rules[3], "RESTRICTED_AREA_INTRUSION", "HIGH", "NEW", 0.4, 0.91, "seed-track-1"),
-        (cameras["pack"], zones["packing"], rules[0], "HAIRNET_VIOLATION", "HIGH", "CONFIRMED", 1.2, 0.88, "seed-track-2"),
-        (cameras["prod"], zones["production"], rules[1], "UNIFORM_VIOLATION", "HIGH", "FALSE_POSITIVE", 2.0, 0.74, "seed-track-3"),
-        (cameras["machine"], zones["machine"], rules[2], "MACHINE_DANGER_ZONE_INTRUSION", "CRITICAL", "NEW", 3.1, 0.93, "seed-track-4"),
-        (cameras["warehouse"], zones["forklift"], rules[4], "PEDESTRIAN_IN_FORKLIFT_ZONE", "CRITICAL", "RESOLVED", 4.5, 0.86, "seed-track-5"),
-        (cameras["pack"], zones["packing"], rules[0], "HAIRNET_VIOLATION", "MEDIUM", "CONFIRMED", 6.0, 0.81, "seed-track-6"),
-        (cameras["warehouse"], zones["restricted"], rules[3], "RESTRICTED_AREA_INTRUSION", "HIGH", "NEW", 8.0, 0.9, "seed-track-7"),
-        (cameras["prod"], zones["production"], rules[1], "UNIFORM_VIOLATION", "LOW", "RESOLVED", 20.0, 0.67, "seed-track-8"),
-        (cameras["machine"], zones["machine"], rules[2], "MACHINE_DANGER_ZONE_INTRUSION", "CRITICAL", "FALSE_POSITIVE", 26.0, 0.58, "seed-track-9"),
+        ("HELMET_VIOLATION", "NEW", 0.4, 0.88, "seed-track-1"),
+        ("CLOTHING_VIOLATION", "CONFIRMED", 1.2, 0.84, "seed-track-2"),
+        ("MASK_VIOLATION", "FALSE_POSITIVE", 2.0, 0.61, "seed-track-3"),
+        ("MASK_VIOLATION", "NEW", 3.1, 0.79, "seed-track-4"),
+        ("HELMET_VIOLATION", "RESOLVED", 4.5, 0.9, "seed-track-5"),
+        ("MASK_VIOLATION", "CONFIRMED", 6.0, 0.81, "seed-track-6"),
+        ("HELMET_VIOLATION", "NEW", 8.0, 0.86, "seed-track-7"),
+        ("CLOTHING_VIOLATION", "RESOLVED", 20.0, 0.72, "seed-track-8"),
+        ("CLOTHING_VIOLATION", "FALSE_POSITIVE", 26.0, 0.55, "seed-track-9"),
     ]
-    for camera, zone, rule, event_type, severity, status, hours, confidence, track in samples:
+    for event_type, status, hours, confidence, track in samples:
+        rule = by_event[event_type]
         started = now - timedelta(hours=hours)
         incident = Incident(
             factory_id=factory.id,
@@ -92,14 +106,14 @@ def seed(db: Session) -> None:
             zone_id=zone.id,
             rule_id=rule.id,
             event_type=event_type,
-            severity=severity,
+            severity=rule.severity,
             track_id=track,
             confidence=confidence,
             started_at=started,
             ended_at=started + timedelta(seconds=18),
             status=status,
-            model_name="ppe-classifier" if "VIOLATION" in event_type else "person-detector",
-            model_version="v0.1" if "VIOLATION" in event_type else "v0-demo",
+            model_name="ppe-detector",
+            model_version="v0-demo",
             ai_mode="DEMO",
             created_at=started,
             updated_at=started,
@@ -113,36 +127,91 @@ def seed(db: Session) -> None:
     db.commit()
 
 
-def _ensure_bean_line(db: Session, factory: Factory) -> bool:
-    """Add the three coffee belts to a factory that was seeded before this feature."""
-    if db.query(Camera).filter(Camera.code == "CAM-BEAN-01").first():
-        return False
-    camera = Camera(factory_id=factory.id, code="CAM-BEAN-01", name="Bean Line Camera 01", area="Bean grading", stream_type="FILE", stream_url="", enabled=True, ai_fps=25)
-    db.add(camera)
+def _leave_coffee_demo(db: Session, factory: Factory) -> None:
+    """Turns a database seeded for the coffee plant into the general factory demo. Runs once.
+
+    The five seeded coffee cameras go, with their zones, rules, incidents and reviews.
+    Cameras added by hand stay. Renaming the factory marks the move as done.
+    """
+    for camera in db.query(Camera).filter(Camera.factory_id == factory.id, Camera.code.in_(LEGACY_CAMERAS)).all():
+        delete_camera_data(db, camera)
+    for model in db.query(AIModel).filter(AIModel.name.in_(LEGACY_MODELS)).all():
+        db.query(AIModelDeployment).filter(AIModelDeployment.model_id == model.id).delete(synchronize_session=False)
+        db.delete(model)
     db.flush()
-    green = Zone(factory_id=factory.id, camera_id=camera.id, name="Green coffee belt", zone_type="GREEN_COFFEE_LINE", polygon=GREEN_BELT)
-    roasted = Zone(factory_id=factory.id, camera_id=camera.id, name="Roasted coffee belt", zone_type="ROASTED_COFFEE_LINE", polygon=ROAST_BELT)
-    counted = Zone(factory_id=factory.id, camera_id=camera.id, name="Coffee count belt", zone_type="COFFEE_COUNT_LINE", polygon=COUNT_BELT)
-    db.add_all([green, roasted, counted])
-    db.flush()
-    db.add_all(
-        [
-            _rule(factory, camera, green, "Green bean defect rate", "GREEN_COFFEE_DEFECT_RATE", "DEFECT_RATE", 2000, "HIGH", {"max_defect_rate": 0.15, "window": 8}),
-            _rule(factory, camera, roasted, "Roasted bean defect rate", "ROASTED_COFFEE_DEFECT_RATE", "DEFECT_RATE", 2000, "HIGH", {"max_defect_rate": 0.15, "window": 8}),
-        ]
-    )
-    if db.query(AIModel).filter(AIModel.name == "coffee-line", AIModel.version == "v0-demo").first() is None:
-        model = AIModel(
-            name="coffee-line",
-            version="v0-demo",
-            model_type="COFFEE_INSPECTOR",
-            status="DEMO",
-            description="Green defects (black, broken, fade, sour), roasted defects (quaker, burnt, insect, mould), and a count-only belt. DEMO moves scripted beans. REAL uses coffee.onnx or colour blobs.",
-        )
+    factory.code, factory.name = FACTORY_CODE, FACTORY_NAME
+    _ensure_models(db, factory)
+    if db.query(Camera).filter(Camera.code == WORKSHOP_CAMERA).first() is None:
+        _add_workshop_camera(db, factory)
+    if db.query(Camera).filter(Camera.code == RESTRICTED_CAMERA).first() is None:
+        _add_restricted_camera(db, factory)
+    if db.query(Camera).filter(Camera.code == HANDWASH_CAMERA).first() is None:
+        _add_handwash_camera(db, factory)
+    db.commit()
+
+
+def _add_handwash_once(db: Session, factory: Factory) -> None:
+    """A database seeded before the hand-wash camera existed gets it on the next start.
+
+    The hand-wash model row marks that this has run, so a hand-wash camera deleted later stays deleted.
+    """
+    if db.query(AIModel).filter(AIModel.name == HANDWASH_MODEL).first() is not None:
+        return
+    _ensure_models(db, factory)
+    if db.query(Camera).filter(Camera.code == HANDWASH_CAMERA).first() is None:
+        _add_handwash_camera(db, factory)
+    db.commit()
+
+
+def _ensure_models(db: Session, factory: Factory) -> None:
+    for name, version, model_type, status, description in MODELS:
+        if db.query(AIModel).filter(AIModel.name == name, AIModel.version == version).first():
+            continue
+        model = AIModel(name=name, version=version, model_type=model_type, status=status, description=description)
         db.add(model)
         db.flush()
         db.add(AIModelDeployment(model_id=model.id, factory_id=factory.id, status="ACTIVE", notes="POC deployment"))
-    return True
+
+
+def _add_workshop_camera(db: Session, factory: Factory) -> tuple[Camera, Zone, list[Rule]]:
+    """One camera over a workshop floor where helmet, protective clothing and mask are required."""
+    camera = Camera(factory_id=factory.id, code=WORKSHOP_CAMERA, name="Workshop Camera 01", area="Workshop floor", stream_type="FILE", stream_url="", enabled=True, ai_fps=25)
+    db.add(camera)
+    db.flush()
+    zone = Zone(factory_id=factory.id, camera_id=camera.id, name="Workshop floor", zone_type="PPE_ZONE", polygon=WORKSHOP_FLOOR)
+    db.add(zone)
+    db.flush()
+    rules = [_rule(factory, camera, zone, name, event_type, condition, 2000, severity) for name, event_type, condition, severity in PPE_RULES]
+    db.add_all(rules)
+    db.flush()
+    return camera, zone, rules
+
+
+def _add_restricted_camera(db: Session, factory: Factory) -> Camera:
+    """One camera over a restricted lane. People may not enter; vehicles may not, except forklifts."""
+    camera = Camera(factory_id=factory.id, code=RESTRICTED_CAMERA, name="Restricted Area Camera 01", area="Restricted lane", stream_type="FILE", stream_url="", enabled=True, ai_fps=25)
+    db.add(camera)
+    db.flush()
+    zone = Zone(factory_id=factory.id, camera_id=camera.id, name="Restricted lane", zone_type="RESTRICTED_AREA", polygon=RESTRICTED_LANE)
+    db.add(zone)
+    db.flush()
+    db.add_all([_rule(factory, camera, zone, name, event_type, condition, 1000, severity) for name, event_type, condition, severity in RESTRICTED_RULES])
+    db.flush()
+    return camera
+
+
+def _add_handwash_camera(db: Session, factory: Factory) -> Camera:
+    """One camera above a sink, looking down. Each wash must show the WHO steps, each for at least 3 s."""
+    camera = Camera(factory_id=factory.id, code=HANDWASH_CAMERA, name="Handwash Station Camera 01", area="Handwash station", stream_type="FILE", stream_url="", enabled=True, ai_fps=10)
+    db.add(camera)
+    db.flush()
+    zone = Zone(factory_id=factory.id, camera_id=camera.id, name="Sink", zone_type="HANDWASH_STATION", polygon=HANDWASH_SINK)
+    db.add(zone)
+    db.flush()
+    name, event_type, condition, severity = HANDWASH_RULE
+    db.add(_rule(factory, camera, zone, name, event_type, condition, 3000, severity))
+    db.flush()
+    return camera
 
 
 def _rule(factory, camera, zone, name, event_type, condition, duration_ms, severity, extensions: dict | None = None) -> Rule:

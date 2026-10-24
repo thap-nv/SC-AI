@@ -1,6 +1,7 @@
 import threading
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from app.config import Settings
@@ -75,9 +76,73 @@ def test_simulate_is_acknowledged_once_while_the_config_is_cached():
     assert api.acks == 1
 
 
+def test_ppe_is_read_a_few_times_a_second_and_settles_after_four_agreeing_reads():
+    loop, _ = loop_with([CAMERA])
+    reads = []
+
+    class Fixed:
+        def classify(self, crop, context=None):
+            reads.append(crop.shape)
+            return {"helmet": ("NO", 0.8), "clothing": ("YES", 0.9), "shoes": ("UNKNOWN", 0.0), "mask": ("UNKNOWN", 0.0)}
+
+    loop.ppe = Fixed()
+    frame = np.zeros((540, 960, 3), dtype=np.uint8)
+    track = {"track_id": "1", "class_name": "person", "confidence": 0.9, "bbox_xyxy": [100, 100, 160, 300]}
+    seen = {when: loop._track_ppe(frame, track, None, when)[0] for when in (0.0, 0.1, 0.2, 0.35, 0.5, 0.7, 0.8, 1.05, 1.1)}
+    assert len(reads) == 4
+    assert seen[0.7]["helmet"] == "UNKNOWN"
+    assert seen[1.05] == {"helmet": "NO", "clothing": "YES", "shoes": "UNKNOWN", "mask": "UNKNOWN"}
+    assert seen[1.1] == seen[1.05]
+
+
+def test_a_person_found_again_under_a_new_id_keeps_the_incident():
+    from app.rule_engine import Observation, RuleConfig
+
+    loop, _ = loop_with([CAMERA])
+    config = RuleConfig(id="rule-1", zone_id="z", condition_type="HELMET_MISSING", event_type="HELMET_VIOLATION", severity="HIGH", min_duration_s=0.0, cooldown_s=30.0, grace_s=1.0)
+    loop._remember("rule-1", "inc-1", "7", (0.40, 0.30, 0.48, 0.70), 100.0)
+
+    def opening(track_id, box):
+        return loop.engine.update(config, Observation(track_id=track_id, timestamp=105.0, inside=True, ppe={"helmet": "NO"}, confidence=0.8, bbox=box))[0]
+
+    assert loop._carry_on(CAMERA, opening("9", (0.42, 0.31, 0.50, 0.71)), 30.0, 105.0, {"9"})
+    assert loop.engine._states[("rule-1", "9")].incident_id == "inc-1"
+    loop._remember("rule-1", "inc-1", "9", (0.42, 0.31, 0.50, 0.71), 106.0)
+    assert not loop._carry_on(CAMERA, opening("11", (0.80, 0.30, 0.88, 0.70)), 30.0, 107.0, {"11"}), "too far away"
+    assert not loop._carry_on(CAMERA, opening("12", (0.43, 0.31, 0.51, 0.71)), 30.0, 107.0, {"9", "12"}), "the earlier track is still in view"
+    assert not loop._carry_on(CAMERA, opening("13", (0.43, 0.31, 0.51, 0.71)), 30.0, 140.0, {"13"}), "past the cooldown"
+
+
 @pytest.mark.skipif(not (Path("/models") / "person.onnx").exists(), reason="person.onnx is not installed")
 def test_onnx_sessions_use_a_few_threads_that_do_not_spin():
     detector, *_ = build_detectors("REAL", "/models", "cpu", threads=2)
     options = detector.session.get_session_options()
     assert options.intra_op_num_threads == 2
     assert options.get_session_config_entry("session.intra_op.allow_spinning") == "0"
+
+
+def test_a_forklift_driver_is_exempt_and_a_car_is_flagged_in_a_restricted_area():
+    zone = {"id": "z1", "name": "Lane", "zone_type": "RESTRICTED_AREA", "polygon": [[0.0, 0.0], [1.0, 0.0], [1.0, 0.98], [0.0, 0.98]]}
+    rules = [
+        {"id": "people", "zone_id": "z1", "condition_type": "PERSON_INSIDE", "enabled": True},
+        {"id": "cars", "zone_id": "z1", "condition_type": "VEHICLE_INSIDE", "enabled": True},
+    ]
+    loop, _ = loop_with([CAMERA])
+    frame = np.zeros((540, 960, 3), dtype=np.uint8)
+    forklift_box, driver_box = [100.0, 200.0, 260.0, 380.0], [150.0, 210.0, 200.0, 330.0]
+    car_box, walker_box = [500.0, 300.0, 700.0, 420.0], [800.0, 200.0, 840.0, 400.0]
+    detections = [
+        {"class_name": "vehicle", "vehicle_type": "forklift", "bbox_xyxy": forklift_box},
+        {"class_name": "vehicle", "vehicle_type": "car", "bbox_xyxy": car_box},
+    ]
+    tracks = [
+        {"track_id": "1", "class_name": "vehicle", "confidence": 0.9, "bbox_xyxy": forklift_box},
+        {"track_id": "2", "class_name": "person", "confidence": 0.9, "bbox_xyxy": driver_box},
+        {"track_id": "3", "class_name": "vehicle", "confidence": 0.9, "bbox_xyxy": car_box},
+        {"track_id": "4", "class_name": "person", "confidence": 0.9, "bbox_xyxy": walker_box},
+    ]
+    enriched = {track["track_id"]: track for track in loop._enrich(frame, {**CAMERA, "zones": [zone], "rules": rules}, detections, tracks, 0.0)}
+    assert enriched["1"]["vehicle_type"] == "forklift" and enriched["1"]["checks"][0]["state"] == "ok"
+    assert enriched["2"]["in_vehicle"] is True and enriched["2"]["checks"][0]["text"] == "In a vehicle"
+    assert enriched["3"]["vehicle_type"] == "car" and enriched["3"]["checks"][0]["state"] == "violation"
+    assert enriched["4"]["in_vehicle"] is False and enriched["4"]["checks"][0]["state"] == "violation"

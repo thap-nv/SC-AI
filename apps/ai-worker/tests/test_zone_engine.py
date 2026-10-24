@@ -38,3 +38,11 @@ def test_person_standing_in_forklift_lane_is_not_placed_in_the_zone_behind():
 def test_degenerate_polygon():
     assert point_in_polygon([[0.1, 0.1], [0.2, 0.2]], 0.1, 0.1) is False
     assert point_in_polygon([], 0.5, 0.5) is False
+
+
+def test_person_cut_off_by_the_bottom_of_the_frame_is_inside_a_corner_to_corner_zone():
+    drawn_by_hand = [[0.0056, 0.0025], [0.9944, 0.0152], [0.9936, 0.9898], [0.0088, 0.9884]]
+    cut_off = (0.45, 0.40, 0.55, 1.0)
+    assert bbox_foot_in_polygon(drawn_by_hand, cut_off) is True
+    floor_ending_higher = [[0.0, 0.3], [1.0, 0.3], [1.0, 0.9], [0.0, 0.9]]
+    assert bbox_foot_in_polygon(floor_ending_higher, cut_off) is False, "still nearer the camera than that zone"
