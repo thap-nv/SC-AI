@@ -68,11 +68,19 @@ Repo private thì dùng deploy key hoặc personal access token khi clone.
 
 ## 3. Chép model lên server
 
-Trên máy dev, trong thư mục dự án (PowerShell hoặc Git Bash):
+Trên máy dev, trong thư mục dự án, chỉ chép các file `.onnx`. Chúng không có trong git; `models/README.md` và `vehicle_types.npz` thì có, và đã về server khi clone hoặc pull.
 
 ```bash
-scp -r models ubuntu@SERVER:factory-safety/
+# Git Bash
+scp models/*.onnx ubuntu@SERVER:factory-safety/models/
 ```
+
+```powershell
+# PowerShell
+scp (Get-ChildItem models\*.onnx).FullName ubuntu@SERVER:factory-safety/models/
+```
+
+Đừng dùng `scp -r models`: lệnh đó ghi đè cả `models/README.md` trên server bằng bản trên máy dev, và lần `git pull` sau sẽ báo `Your local changes to the following files would be overwritten by merge: models/README.md`. Gặp lỗi đó thì trên server chạy `git restore models/README.md` rồi pull lại.
 
 Đường dẫn bên phải không có `/` ở đầu nên tính từ thư mục home của user trên server. Kiểm tra trên server: `ls -lh ~/factory-safety/models/*.onnx`.
 
@@ -226,10 +234,10 @@ sudo certbot renew --dry-run
 ## 8. Dùng lần đầu
 
 1. Mở `https://safety-monitor.madlab.tech`, đăng nhập `admin` với mật khẩu đã đặt.
-2. Camera trong dữ liệu khởi tạo chưa có nguồn hình. Vào từng camera:
+2. Camera trong dữ liệu khởi tạo chưa có nguồn hình. Vào từng camera, bấm **Settings** để mở ngăn kéo cài đặt, rồi:
    - bấm **Upload MP4** (tối đa 200 MB; video mẫu ở `sample-data/videos` trên máy dev không nằm trong git), hoặc
-   - nhập địa chỉ RTSP ở **Camera settings**. Server phải kết nối được tới camera.
-3. Bật **Enable camera**.
+   - nhập địa chỉ RTSP vào ô **RTSP or file key**. Server phải kết nối được tới camera.
+3. Bật công tắc trên viên trạng thái dưới tên camera, cho tới khi nó ghi **Camera on**.
 
 ## Vận hành
 
@@ -240,6 +248,8 @@ cd ~/factory-safety
 git pull
 docker compose up -d --build
 ```
+
+Bản cập nhật có model mới thì chép thêm các file `.onnx` như bước 3 trước khi `docker compose up`. Luật đã có trong database không đổi theo dữ liệu khởi tạo mới; sửa thời gian (Min duration, Cooldown) ở trang **Rules**.
 
 Xem log:
 
