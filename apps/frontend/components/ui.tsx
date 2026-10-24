@@ -124,6 +124,19 @@ export function Switch({ checked, onChange, label, size = "md", tone = "success"
   );
 }
 
+// A checkbox with a label and an optional hint, drawn as a button: a native box would pick up the full-width input style.
+export function Checkbox({ checked, onChange, label, hint }: { checked: boolean; onChange: (next: boolean) => void; label: string; hint?: React.ReactNode }) {
+  return (
+    <button type="button" role="checkbox" aria-checked={checked} onClick={() => onChange(!checked)} className="flex items-start gap-3 rounded-none bg-transparent p-0 text-left font-normal text-graphite-800">
+      <span className={`mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded border-[1.5px] text-xs font-bold text-ink ${checked ? "border-brand-500 bg-brand-500" : "border-line-strong bg-surface"}`}>{checked ? "✓" : ""}</span>
+      <span className="flex flex-col gap-[3px]">
+        <span className="text-[13.5px] font-semibold">{label}</span>
+        {hint ? <span className="text-xs leading-normal text-graphite-500">{hint}</span> : null}
+      </span>
+    </button>
+  );
+}
+
 export function Segmented<T extends string>({ options, value, onChange, label }: { options: { value: T; label: string }[]; value: T; onChange: (next: T) => void; label: string }) {
   return (
     <div role="radiogroup" aria-label={label} className="flex max-w-full gap-0.5 overflow-x-auto rounded-[9px] bg-well p-[3px]">

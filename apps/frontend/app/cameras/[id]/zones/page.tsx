@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Shell from "@/components/shell";
-import { ErrorText, GhostButton, PrimaryButton } from "@/components/ui";
+import { Checkbox, ErrorText, GhostButton, PrimaryButton } from "@/components/ui";
 import { api, getUser, imageUrl, Zone } from "@/lib/api";
 import { ZONE_LABELS } from "@/lib/labels";
 
@@ -17,6 +17,8 @@ export default function ZonesPage() {
   const [name, setName] = useState("PPE area");
   const [zoneType, setZoneType] = useState("PPE_ZONE");
   const [editing, setEditing] = useState<Zone | null>(null);
+  // Whether the zone being saved follows camera moves (locked to the frozen frame) or stays where it is drawn.
+  const [follow, setFollow] = useState(true);
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [error, setError] = useState("");
@@ -140,6 +142,7 @@ export default function ZonesPage() {
     setEditing(zone);
     setName(zone.name);
     setZoneType(zone.zone_type);
+    setFollow(Boolean(zone.reference_key));
     setPoints([]);
   }
 
@@ -147,13 +150,15 @@ export default function ZonesPage() {
     setEditing(null);
     setName("PPE area");
     setZoneType("PPE_ZONE");
+    setFollow(true);
     setPoints([]);
   }
 
   async function save() {
     setError("");
     try {
-      const reference = referenceId ? { reference_id: referenceId } : {};
+      // A new shape sent without a reference frame is saved unlinked.
+      const reference = referenceId && follow ? { reference_id: referenceId } : {};
       if (editing) {
         await api(`/api/zones/${editing.id}`, { method: "PATCH", body: JSON.stringify({ name, polygon: points, ...reference }) });
         stopRedraw();
@@ -167,13 +172,14 @@ export default function ZonesPage() {
     }
   }
 
-  async function lockToView(zone: Zone) {
+  // Lock a zone's current shape to the frame on screen, or pass null to unlink it so it stays where it is drawn.
+  async function setView(zone: Zone, reference: string | null) {
     setError("");
     try {
-      await api(`/api/zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ reference_id: referenceId }) });
+      await api(`/api/zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ reference_id: reference }) });
       loadZones();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not lock the zone to this view");
+      setError(err instanceof Error ? err.message : reference ? "Could not lock the zone to this view" : "Could not unlink the zone");
     }
   }
 
@@ -212,11 +218,20 @@ export default function ZonesPage() {
                 {points.length} points. Click or tap the corners in order around the area. Any number of corners works.
                 {editing ? " The dashed outline is the current shape. Its rules and past incidents stay linked." : ""}
               </div>
-              <div className="text-xs text-graphite-500">
-                {referenceId
-                  ? "Zones saved here remember this frame. If the camera moves a little they follow it; if the view changes too much they pause."
-                  : "No camera frame to remember yet. Zones saved now stay where they are drawn even if the camera moves."}
-              </div>
+              {referenceId ? (
+                <Checkbox
+                  checked={follow}
+                  onChange={setFollow}
+                  label="Follow camera moves"
+                  hint={
+                    follow
+                      ? "The zone remembers this frame. If the camera moves a little it follows; if the view changes too much it pauses."
+                      : "The zone stays exactly where it is drawn, even if the camera moves, and is always checked. Suits a fixed camera, or a video that changes scene."
+                  }
+                />
+              ) : (
+                <div className="text-xs text-graphite-500">No camera frame to remember yet. Zones saved now stay where they are drawn even if the camera moves.</div>
+              )}
               <div className="flex gap-2">
                 <GhostButton type="button" onClick={() => setPoints((current) => current.slice(0, -1))}>Undo</GhostButton>
                 <GhostButton type="button" onClick={() => setPoints([])}>Clear</GhostButton>
@@ -241,7 +256,10 @@ export default function ZonesPage() {
                     <span className="flex flex-wrap justify-end gap-x-3">
                       <button className="link p-0 text-xs" onClick={() => startRedraw(zone)}>Redraw</button>
                       {referenceId ? (
-                        <button className="link p-0 text-xs" title="Use when the zone already matches this frame. Zones locked together form one view." onClick={() => lockToView(zone)}>Lock to this view</button>
+                        <button className="link p-0 text-xs" title="Use when the zone already matches this frame. Zones locked together form one view." onClick={() => setView(zone, referenceId)}>Lock to this view</button>
+                      ) : null}
+                      {zone.reference_key ? (
+                        <button className="link p-0 text-xs" title="Keep the zone where it is drawn. It stops following camera moves and never pauses." onClick={() => setView(zone, null)}>Unlink</button>
                       ) : null}
                       <button className="p-0 text-xs font-semibold text-danger-700 hover:text-danger-800" onClick={() => api(`/api/zones/${zone.id}`, { method: "DELETE" }).then(() => { if (zone.id === editing?.id) stopRedraw(); loadZones(); })}>Delete</button>
                     </span>

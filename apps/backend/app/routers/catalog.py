@@ -245,19 +245,21 @@ def update_zone(zone_id: str, body: ZoneUpdate, db: Session = Depends(get_db), _
     """Rename or redraw a zone in place. Its rules and past incidents keep pointing at it.
 
     A new shape belongs to the frame it was drawn on, so it replaces the reference frame,
-    or clears it when none is sent. A reference frame alone locks the current shape to that view.
+    or clears it when none is sent. A reference frame alone locks the current shape to that view,
+    and reference_id sent as null unlinks it: the zone stays where it is drawn and stops following camera moves.
     """
     zone = db.get(Zone, zone_id)
     if zone is None:
         raise HTTPException(status_code=404, detail="Zone not found")
     reference_key = _stored_reference(zone.camera_id, body.reference_id) if body.reference_id else None
+    unlink = "reference_id" in body.model_fields_set and body.reference_id is None
     if body.polygon is not None:
         try:
             zone.polygon = validate_polygon(body.polygon)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         zone.reference_key = reference_key
-    elif reference_key:
+    elif reference_key or unlink:
         zone.reference_key = reference_key
     if body.name is not None:
         zone.name = body.name.strip()

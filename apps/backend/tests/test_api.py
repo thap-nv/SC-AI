@@ -233,6 +233,11 @@ def test_zone_keeps_the_frame_it_was_drawn_on(monkeypatch):
         assert api.patch(url, headers=headers, json={"name": "Dock A"}).json()["reference_key"] == key
         assert api.patch(url, headers=headers, json={"polygon": shape}).json()["reference_key"] is None
         assert api.patch(url, headers=headers, json={"reference_id": frozen}).json()["reference_key"] == key
+        # An explicit null unlinks without touching the shape; leaving the field out keeps the link.
+        unlinked = api.patch(url, headers=headers, json={"reference_id": None}).json()
+        assert unlinked["reference_key"] is None and unlinked["polygon"] == shape
+        assert api.patch(url, headers=headers, json={"name": "Dock B"}).json()["reference_key"] is None
+        assert api.patch(url, headers=headers, json={"reference_id": frozen}).json()["reference_key"] == key
         assert api.patch(url, headers=headers, json={"reference_id": "../latest_raw"}).status_code == 400
         assert api.patch(url, headers=headers, json={"reference_id": "0" * 32}).status_code == 400
         api.delete(url, headers=headers)

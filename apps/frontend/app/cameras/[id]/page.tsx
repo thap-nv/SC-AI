@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/providers";
 import Shell from "@/components/shell";
-import { Badge, ErrorText, Notice, OutlineButton, PrimaryButton, RecDot, SeverityTag, StatusPill, Switch } from "@/components/ui";
+import { Badge, Checkbox, ErrorText, Notice, OutlineButton, PrimaryButton, RecDot, SeverityTag, StatusPill, Switch } from "@/components/ui";
 import { api, Camera, getUser, imageUrl, Incident, Rule } from "@/lib/api";
 import { useIncidentEvents } from "@/lib/live";
 import { eventLabel, formatTime } from "@/lib/labels";
@@ -396,19 +396,12 @@ export default function CameraDetailPage() {
                 <span className="text-[13px] font-semibold">Assigned worker</span>
                 <input defaultValue={camera.assigned_worker || ""} placeholder="Blank = any worker" onBlur={(e) => { if (e.target.value !== (camera.assigned_worker || "")) save({ assigned_worker: e.target.value || null } as Partial<Camera>); }} />
               </label>
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={Boolean(camera.multi_view)}
-                onClick={() => save({ multi_view: !camera.multi_view })}
-                className="flex items-start gap-3 rounded-none bg-transparent p-0 text-left font-normal text-graphite-800"
-              >
-                <span className={`mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded border-[1.5px] text-xs font-bold text-ink ${camera.multi_view ? "border-brand-500 bg-brand-500" : "border-line-strong bg-surface"}`}>{camera.multi_view ? "✓" : ""}</span>
-                <span className="flex flex-col gap-[3px]">
-                  <span className="text-[13.5px] font-semibold">Camera has several views</span>
-                  <span className="text-xs leading-normal text-graphite-400">For PTZ presets. Zones lock to one view; only the matching view is checked. Leave off for a fixed camera.</span>
-                </span>
-              </button>
+              <Checkbox
+                checked={Boolean(camera.multi_view)}
+                onChange={(next) => save({ multi_view: next })}
+                label="Camera has several views"
+                hint="For PTZ presets. Zones lock to one view; only the matching view is checked. Leave off for a fixed camera."
+              />
               <label
                 className="flex cursor-pointer flex-col items-center gap-1 rounded-[10px] border-[1.5px] border-dashed border-line-strong bg-subtle p-[18px] text-center transition-colors hover:border-brand-500 hover:bg-brand-50"
                 onDragOver={(e) => e.preventDefault()}
