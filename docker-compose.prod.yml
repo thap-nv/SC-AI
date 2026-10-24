@@ -1,0 +1,26 @@
+# Server overlay: every port is published on 127.0.0.1 only, and nginx on the host is the one public entry.
+# Docker writes its own iptables rules, so a port published on 0.0.0.0 would bypass ufw.
+# Steps in docs/DEPLOY.md. Needs Docker Compose 2.24.4 or newer for !override.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# or set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in .env and run plain docker compose.
+
+services:
+  backend:
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  frontend:
+    ports: !override
+      - "127.0.0.1:3000:3000"
+
+  ai-worker:
+    ports: !override
+      - "127.0.0.1:8081:8081"
+
+  # Reach the console through an SSH tunnel: ssh -L 9101:127.0.0.1:9101 user@server
+  minio:
+    ports: !override
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"

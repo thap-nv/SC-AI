@@ -36,6 +36,8 @@ Tài khoản demo:
 
 MinIO: `safetyadmin` / `safetyadmin123`.
 
+Đưa lên server Ubuntu, sau nginx và HTTPS: xem [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Bản đồ hệ thống
 
 ```mermaid
