@@ -5,7 +5,8 @@ import numpy as np
 from app.config import Settings
 from app.detectors import DemoHandwashDetector, OnnxHandwashClassifier, OnnxHandwashDetector, zone_square
 from app.drawing import annotate, track_tag
-from app.handwash import MIN_WASH_S, WASH_GAP_S, WashTracker, missing_steps, wash_checks
+from app.handpose import hand_square, hands_box
+from app.handwash import MIN_WASH_S, STEP_NAMES, WASH_GAP_S, Wash, WashTracker, checked_parts, missing_steps, step_of, wash_checks
 from app.runtime import CameraLoop
 from app.scenes import WASH_PERIOD_S, WASH_STEPS, scripted_objects, scripted_wash
 
@@ -78,6 +79,39 @@ def test_a_single_misread_does_not_count_for_its_step():
     tracker = WashTracker()
     ended = _wash(tracker, [("backs", 2), ("thumbs", 0.2), ("backs", 2), (None, WASH_GAP_S + 1)])
     assert "thumbs" not in ended[0].step_s
+
+
+def _credited(**seconds: float) -> Wash:
+    wash = Wash(id="W1", started_at=0.0, last_seen_at=0.0, last_read_at=0.0)
+    wash.step_s = dict(seconds)
+    return wash
+
+
+def test_a_step_per_hand_needs_half_the_minimum_from_each_hand():
+    checked = {"palms", "thumbs_left", "thumbs_right"}
+    assert missing_steps(_credited(palms=2.0, thumbs_left=0.8, thumbs_right=0.8), checked, 1.5) == []
+    one_thumb = _credited(palms=2.0, thumbs_right=3.0)
+    assert missing_steps(one_thumb, checked, 1.5) == ["thumbs_left"]
+    assert missing_steps(_credited(palms=2.0), checked, 1.5) == ["thumbs"]
+    checks = wash_checks(one_thumb, checked, 1.5, finished=True)
+    assert [(check["text"], check["state"]) for check in checks] == [("1 Palm to palm", "ok"), ("5 Thumbs: right hand only", "violation")]
+    # The incident note names the hand.
+    assert STEP_NAMES["thumbs_left"] == "Thumbs (left hand)"
+
+
+def test_skipping_a_step_skips_it_for_both_hands():
+    assert step_of("fingertips_right") == "fingertips" and step_of("palms") == "palms"
+    assert checked_parts({"palms", "fingers", "thumbs_left", "thumbs_right"}, {"thumbs", ""}) == {"palms", "fingers"}
+
+
+def test_reads_with_chances_credit_every_step_by_its_chance():
+    tracker = WashTracker()
+    chances = {"backs": 0.6, "thumbs": 0.3, "fingertips": 0.1}
+    for tick in range(26):
+        tracker.observe("sink", ("backs", 0.6, BOX, chances), 1000.0 + tick * 0.2)
+    step_s = tracker.washes["sink"].step_s
+    # 25 gaps of 0.2 s after the first read: 5 s shared out by chance.
+    assert [round(step_s[step], 2) for step in ("backs", "thumbs", "fingertips")] == [3.0, 1.5, 0.5]
 
 
 def test_hands_away_for_less_than_the_gap_keep_the_same_wash():
@@ -160,11 +194,74 @@ def test_a_scaled_frame_goes_in_smaller_and_boxes_come_back_in_frame_pixels():
     assert np.allclose(found[0][2], [16, 10, 48, 26])
 
 
-def _classifier(logits: list[float]) -> OnnxHandwashClassifier:
+def _classifier(logits: list[float], hands=None) -> OnnxHandwashClassifier:
     classifier = object.__new__(OnnxHandwashClassifier)
     classifier.input_name, classifier.classes = "image", list(OnnxHandwashClassifier.CLASSES)
     classifier.session = _Recording(np.array([logits], dtype=np.float32))
+    classifier.crop, classifier.hands = ("hands", hands) if hands else ("zone", None)
+    classifier.steps = set(WASH_STEPS)
     return classifier
+
+
+class _NoPalms:
+    def __init__(self):
+        self.regions: list[tuple[int, int]] = []
+
+    def palms(self, image):
+        self.regions.append(image.shape[:2])
+        return []
+
+
+class _PalmsAt:
+    """Palms at fixed pixels of a 1280x720 frame, given in the pixels of the region searched, as HandPose.palms does.
+
+    Every zone here runs to the frame's right and bottom edges, so the region's size tells where it starts.
+    """
+
+    def __init__(self, frame_boxes: list[list[float]]):
+        self.frame_boxes = frame_boxes
+
+    def palms(self, image):
+        left, top = 1280 - image.shape[1], 720 - image.shape[0]
+        return [np.array([box[0] - left, box[1] - top, box[2] - left, box[3] - top]) for box in self.frame_boxes]
+
+
+def test_the_hands_square_is_centred_between_the_palms_and_four_palm_widths_a_side():
+    assert hands_box([]) is None
+    square = hands_box([np.array([100, 100, 140, 140]), np.array([160, 100, 200, 140])])
+    assert np.allclose(square, [70, 40, 230, 200])
+    # A second palm under half the size of the first is not a hand: the square stays on the first.
+    assert np.allclose(hands_box([np.array([100, 100, 140, 140]), np.array([300, 300, 310, 310])]), [40, 40, 200, 200])
+    # Hands far apart widen the square to take both in.
+    wide = hands_box([np.array([0, 0, 40, 40]), np.array([360, 0, 400, 40])])
+    assert np.isclose(wide[2] - wide[0], 1.3 * 400)
+
+
+def test_the_hands_square_is_grey_where_it_runs_off_the_frame():
+    square = hand_square(np.full((100, 100, 3), 255, dtype=np.uint8), [-50, 0, 50, 100], 100)
+    assert (square[50, 10] == 127).all() and (square[50, 90] == 255).all()
+
+
+def test_a_hands_model_sees_the_same_picture_however_the_zone_is_drawn():
+    # The frame's top left corner is grey and the rest white, so a crop that moved would show it.
+    frame = np.full((720, 1280, 3), 255, dtype=np.uint8)
+    frame[:100, :100] = 60
+    hands = _PalmsAt([[600, 300, 660, 360], [680, 300, 740, 360]])
+    seen = []
+    for polygon in ([[0.22, 0.0], [1.0, 0.0], [1.0, 1.0], [0.22, 1.0]], [[0.06, 0.05], [1.0, 0.05], [1.0, 1.0], [0.06, 1.0]]):
+        classifier = _classifier([0, 0, 0, 0, 0, 0, 5, 0], hands=hands)
+        found = classifier.detect(frame, [{**SINK, "polygon": polygon}], 0.0, False)
+        assert [step for step, *_ in found] == ["thumbs"]
+        assert np.allclose(found[0][2], [550, 210, 790, 450])
+        seen.append(classifier.session.image)
+    assert np.allclose(seen[0], seen[1])
+
+
+def test_a_hands_model_gives_no_hit_when_no_palm_is_found():
+    finder = _NoPalms()
+    assert _classifier([0, 0, 5, 0, 0, 0, 0, 0], hands=finder).detect(np.zeros((100, 200, 3), dtype=np.uint8), [SINK], 0.0, False) == []
+    # Hands are looked for only in the zone's bounding box: x 0.3-0.7, y 0.2-0.7 of 200x100.
+    assert finder.regions == [(50, 80)]
 
 
 def test_the_site_classifier_reads_the_zone_box_and_names_one_class():
@@ -174,8 +271,10 @@ def test_the_site_classifier_reads_the_zone_box_and_names_one_class():
     zone = {**SINK, "polygon": [[0.25, 0.0], [0.75, 0.0], [0.75, 1.0], [0.25, 1.0]]}
     classifier = _classifier([0, 0, 0, 0, 0, 0, 5, 0])  # thumbs
     found = classifier.detect(frame, [zone], 0.0, False)
-    assert [(step, box) for step, _, box in found] == [("thumbs", [50.0, 0.0, 150.0, 100.0])]
+    assert [(step, box) for step, _, box, _ in found] == [("thumbs", [50.0, 0.0, 150.0, 100.0])]
     assert found[0][1] > 0.9
+    # The chance of each of the six steps goes with it, for the wash to credit.
+    assert set(found[0][3]) == set(WASH_STEPS) and found[0][3]["thumbs"] > 0.9
     seen = classifier.session.image
     assert seen.shape == (1, 3, 224, 224)
     # The 100x100 box is square already: no grey padding, only the white sink.
@@ -185,7 +284,7 @@ def test_the_site_classifier_reads_the_zone_box_and_names_one_class():
 def test_the_site_classifier_gives_no_hit_without_hands_and_other_keeps_the_wash_going():
     frame = np.zeros((100, 200, 3), dtype=np.uint8)
     assert _classifier([5, 0, 0, 0, 0, 0, 0, 0]).detect(frame, [SINK], 0.0, False) == []
-    assert [step for step, _, _ in _classifier([0, 5, 0, 0, 0, 0, 0, 0]).detect(frame, [SINK], 0.0, False)] == ["other"]
+    assert [step for step, *_ in _classifier([0, 5, 0, 0, 0, 0, 0, 0]).detect(frame, [SINK], 0.0, False)] == ["other"]
     tracker = WashTracker()
     _wash(tracker, [("other", 4)])
     assert tracker.washes["sink"].step_s.keys() <= {"other"}
@@ -272,6 +371,22 @@ def test_an_uploaded_video_starting_over_ends_the_wash_there():
     assert api.opened == []
     loop._handwash(frame, CAMERA, start + 12.0, False, restarted=True)
     assert len(api.opened) == 1 and api.closed[0][0] == "inc-1"
+
+
+def test_a_video_playing_over_reports_the_same_wash_once_per_cooldown():
+    loop = CameraLoop("cam-wash", Settings(ai_mode="REAL", model_path="/nowhere", handwash_skip_steps=""), threading.Event())
+    api = FakeApi()
+    loop.api = api
+    loop.gestures = DemoHandwashDetector()
+    camera = {**CAMERA, "stream_url": "videos/cam-wash/clip.mp4", "rules": [{**RULE, "cooldown_ms": 600000}]}
+    loop.looped_url = camera["stream_url"]
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for play in (7000, 7001):  # the short wash, two plays of the video 70 s apart
+        start = play * WASH_PERIOD_S + 40.0
+        for tick in range(60):
+            loop._handwash(frame, camera, start + tick * 0.2, False)
+        loop._handwash(frame, camera, start + 12.0, False, restarted=True)
+    assert len(api.opened) == 1
 
 
 def test_without_a_hand_wash_rule_the_gesture_model_is_never_loaded():

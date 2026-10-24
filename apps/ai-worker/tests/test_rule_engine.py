@@ -143,6 +143,28 @@ def test_missing_track_closes_after_grace():
     assert closed[0].kind == "close"
 
 
+def test_end_all_closes_open_incidents_and_drops_pending_ones():
+    engine = RuleEngine()
+    config = rule()
+    see(engine, config, 0.0)
+    see(engine, config, 2.0)
+    engine.attach_incident("rule-1", "7", "inc-1")
+    see(engine, config, 3.0, track="8")
+    closed = engine.end_all({config.id: config}, 3.2)
+    assert [(action.kind, action.incident_id, action.ended_at) for action in closed] == [("close", "inc-1", 2.0)]
+    assert ("rule-1", "8") not in engine._states
+    assert engine.end_all({config.id: config}, 3.3) == []
+
+
+def test_has_open_counts_only_incidents_the_api_accepted():
+    engine = RuleEngine()
+    config = rule(min_duration_s=0.0)
+    see(engine, config, 0.0)
+    assert not engine.has_open("rule-1"), "opening, no incident yet"
+    engine.attach_incident("rule-1", "7", "inc-1")
+    assert engine.has_open("rule-1") and not engine.has_open("rule-2")
+
+
 def vehicle(engine, config, t, vehicle_type, track="v1", inside=True):
     return engine.update(config, Observation(track_id=track, timestamp=t, inside=inside, confidence=0.9, class_name="vehicle", vehicle_type=vehicle_type))
 

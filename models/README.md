@@ -10,7 +10,9 @@ The local `person.onnx` is the official YOLOX-Nano COCO model:
 
 The person detector does not require visible facial skin. Boxes above 0.30 are kept and overlapping boxes are suppressed using the highest confidence first. The tracker only starts a new person from a box above 0.55, and shows it from its fourth frame in a row.
 
-Any official YOLOX ONNX model works as `person.onnx`; the input size is read from the file. YOLOX-S (640 px, SHA256 `c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063`, same release page) found 13.6 people per frame on the 15-person workshop clip against 5.5 for Nano, and kept apart two workers Nano merged into one box. It took about 146 ms a frame on 2 CPU threads against 18 ms, so lower the camera AI FPS to about 5 with it.
+A wide frame goes into the model as overlapping squares as high as the frame, two for 16:9 (columns 0–720 and 560–1280 of a 1280x720 frame), instead of being squeezed whole into the model's square. Each person comes out 1.8 times bigger. On the port clip (`sample-data/videos/retricted area 2.mp4`), a worker standing in the restricted lane far from the camera, 65 px tall, scored 0.55 or more in 2 of 49 frames on the whole frame, so the tracker never started them; on two squares, in 44. A box that touches the edge two squares share is joined with the rest of the same object from the other square. Nano takes about 36 ms a frame on 2 threads this way, against 18 ms. On the workshop clip the camera loop opened the same four incidents, for the same four workers, with and without the squares.
+
+Any official YOLOX ONNX model works as `person.onnx`; the input size is read from the file. YOLOX-S (640 px, SHA256 `c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063`, same release page) found 13.6 people per frame on the 15-person workshop clip against 5.5 for Nano, and kept apart two workers Nano merged into one box. It took about 146 ms a frame on 2 CPU threads against 18 ms on the whole frame, and twice that on two squares, so lower the camera AI FPS to about 3 with it.
 
 Download from PowerShell in the project root:
 
@@ -79,14 +81,46 @@ pip install torch torchvision onnx --index-url https://download.pytorch.org/whl/
 python tools/mask_classifier/train_mask.py path/to/FaceMask models/mask.onnx
 ```
 
+## Forklift detector
+
+The person model (any official YOLOX) also reports COCO vehicles: car, motorcycle, bus and truck. COCO has no forklift. On the port clip YOLOX-Nano read the forklift as a truck at 0.55 or more, enough to start a track, in 6 of 55 frames and never while it was far off, so the forklift went without a box for all but the last second of its pass. Even YOLOX-M on three squares, at about 1 s a frame, read it at 0.2–0.5 while it was far off.
+
+`forklift.onnx` is optional. It is loaded only by a camera with a person or vehicle zone rule (people may not enter, no vehicles but forklifts), and runs on the whole frame every frame. Without it a forklift is only a truck the person model happens to find, and its driver can count as a person in the zone.
+
+- Source: `best.pt` of https://huggingface.co/keremberke/yolov8n-forklift-detection, a YOLOv8n fine-tuned on the Roboflow "Forklift" set (https://universe.roboflow.com/mohamed-traore-2ekkp/forklift-dsitv, 421 images, classes forklift and person). SHA256 of the checkpoint: `0dc3816283226f0f7ac5410620394c8ddeef32c5200b371194ac4df4a1ee7d38`.
+- License: the dataset is CC BY 4.0. The weights are a fine-tuned Ultralytics YOLOv8, which Ultralytics licenses under AGPL-3.0 (the export says so in its metadata), as for `handwash.onnx`. Check this before shipping a product.
+- Built by `tools/forklift_yolo/export_forklift_onnx.py`, outside the worker image, at 512x896, the shape of a 16:9 frame. The export gives a different file each time (it stores the date). SHA256 of the file built for this POC: `7f76b76c2b5b9b18894bbee37f181c322dfd1203d286bd2dd6b2e9feaeb08b28`.
+- Input 1x3x512x896 RGB, 0..1, letterboxed with grey 114; the size is read from the file. Output: a YOLO head `(1, 4 + classes, anchors)`. Class names come from the file; only `forklift` boxes above 0.30 are kept, people come from YOLOX.
+
+On the port clip, every fourth frame, with the forklift marked by YOLOv8m of the same set on two squares:
+
+| Input | Forklift at 0.55 or more | at 0.3 or more | First 2 s, far off, at 0.55 or more | ms a frame, 2 threads |
+|---|---|---|---|---|
+| 384x640 | 44/55 | 50/55 | 1/12 | 34 |
+| 640x640 | 44/55 | 51/55 | 1/12 | 53 |
+| 512x896 | 52/55 | 55/55 | 10/12 | 60 |
+| YOLOv8s 640x640 | 54/55 | 55/55 | 12/12 | 147 |
+
+The model was trained on photos with no cars in them. It read the clip's white car as a forklift at up to 0.89, and once boxed the car and the forklift behind it as one forklift, while YOLOX read the car at 0.8 or more in every frame and the forklift as a car at most 0.61, as it left the frame. So a forklift box on a YOLOX car or bus of 0.7 or more is dropped, and any other YOLOX vehicle on a forklift box (a truck, a motorcycle, a weak car) gives way to it. It also put a forklift box at 0.35–0.48 on cranes and a yellow barrier, too weak to start a track. On the first port clip (`retricted area.mp4`, one worker, container trucks far off) it boxed nothing.
+
+Through the worker's own camera loop on the port clip, two plays, with the zone as drawn: the forklift was followed from 0.4 s to 9 s of its 9 s pass and typed as a forklift throughout, the car was a violation throughout, and the far worker in the lane was followed from 1.4 s and opened the intrusion incident. Before, the forklift had a box for 0.8 s and the far worker none. The loop took about 107 ms a frame against 21 ms, so the camera runs at about 9 FPS on this machine whatever its AI FPS is set to. The near worker walks on the yellow line that edges the drawn lane, 4–13 px outside it, and is not counted as inside.
+
+Rebuild from the repo root, outside the worker image:
+
+```text
+pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu
+pip install ultralytics==8.2.94 "numpy<2" onnx==1.16.2 onnxslim==0.1.34
+python tools/forklift_yolo/export_forklift_onnx.py path/to/best.pt
+```
+
 ## Vehicle types
 
-The person model (any official YOLOX) also reports COCO vehicles: car, motorcycle, bus and truck. COCO has no forklift, and forklifts come out as trucks, often weakly. A restricted area that allows forklifts needs the vehicle type, so each tracked vehicle is typed by CLIP twice a second and keeps the most common of its last five reads.
+A restricted area that allows forklifts needs the vehicle type, so each tracked vehicle is typed by CLIP twice a second and keeps the most common of its last five reads, whichever detector found it.
 
 - `clip_vision.onnx`: CLIP ViT-B/32 image encoder, int8 quantised. File `onnx/vision_model_quantized.onnx` from https://huggingface.co/Xenova/clip-vit-base-patch32. OpenAI released CLIP under MIT; the converted repo states no licence of its own, so check before shipping a product. SHA256 `583fd1110a514667812fee7d684952aaf82a99b959760c8d7dca7e0ab9839299`.
 - `vehicle_types.npz`: one text vector per type (forklift, car, truck, bus, motorcycle, van), written by `tools/vehicle_types/export_vehicle_types.py` with the matching text encoder. The worker needs no tokenizer. It only fits the CLIP model above.
 - On the port reference image the two forklifts scored 0.97 and 0.99 forklift, the two cars 0.00 and 0.02.
-- Without these two files the COCO class is used, so a forklift detected as a truck is not allowed.
+- Without these two files the detector's class is used: a box from `forklift.onnx` is a forklift, and a forklift YOLOX detected as a truck is not allowed.
 
 A person whose box lies at least 60% inside a vehicle's box is taken to be riding it, such as a forklift driver, and does not count as a person in a restricted area.
 
@@ -114,7 +148,7 @@ The detection model `yolo8n.pt` named 24 of 40 and was worse on thumbs (4/10). C
 
 Backs of fingers would be reported missing on nearly every wash, so with this model set `HANDWASH_SKIP_STEPS=fingers` in `.env` (the default is empty, for the site classifier below, which reads every step). The worker then checks steps 2, 5 and 6. A wash where only backs of fingers was done can still pass on fingertips.
 
-Camera distance matters more than angle. The model learned hands about a tenth of the frame wide. On the site's sink, filmed from above but closer, hands are about a fifth of the frame wide and the model found them in 21 of 170 labelled reads. `HANDWASH_SCALE` letterboxes the frame smaller, as if the camera were further away. Two sample washes of the site were labelled by eye: `sample-data/videos/handwash - correct.mp4` does all six steps in order, about 42 s of rubbing, 4–8 s a step; `handwash - wrong.mp4` is two rushed washes, steps 1.5–4 s each, the first without steps 3 and 6, the second without thumbs. Both went through the worker's reads and wash logic on a live timeline (loop at 12 and 18.7 fps, a read every 0.2 s, three start offsets each), with the rule's 3 s per step:
+Camera distance matters more than angle. The model learned hands about a tenth of the frame wide. On the site's sink, filmed from above but closer, hands are about a fifth of the frame wide and the model found them in 21 of 170 labelled reads. `HANDWASH_SCALE` letterboxes the frame smaller, as if the camera were further away. Two sample washes of the site were labelled by eye: `sample-data/videos/handwash - correct.mp4` does all six steps in order, about 42 s of rubbing, 4–8 s a step; `handwash - wrong.mp4` is two rushed washes, steps 1–4 s each. As the person who washed tells it, the first leaves out step 3 and turns only one thumb (step 5 half done), the second leaves out step 4. Both went through the worker's reads and wash logic on a live timeline (loop at 12 and 18.7 fps, a read every 0.2 s, three start offsets each), with the rule's 3 s per step:
 
 | Scale | Wash gap | Correct passed | Wrong flagged |
 |---|---|---|---|
@@ -131,38 +165,44 @@ An uploaded video plays at its own speed, like a live camera: frames the loop is
 
 How a wash is judged:
 
-- The gesture is read every `HANDWASH_INTERVAL_S` (default 0.2 s, about 70 ms a read on 2 threads). A read settles when two of the last three agree. In a clip made of the test frames (each held 0.5 s, 6 s per step), three of five credited thumbs anywhere from 2.8 to 6.8 s, and one full wash in three was reported missing thumbs; two of three credited 4.2–5.4 s. A step not done picked up at most 2.4 s from misreads of the step before it.
-- A wash starts when hands show up in the zone and ends when none have been seen for `HANDWASH_GAP_S` (2.5 s), or when an uploaded video starts over. Hands seen for less than 3 s in all are someone passing, not a wash.
-- A step is done once it has been the settled gesture for the rule's minimum duration (3 s in the seeded rule). When the wash ends, a checked step not done is missing, and one incident is opened and closed at once, spanning the wash. Its snapshot lists the missed steps.
-- These timings have not been checked on video yet; the test set is still frames. Check them on footage from the real sink before relying on the alerts.
+- The gesture is read every `HANDWASH_INTERVAL_S` (default 0.2 s). With the site classifier, each read credits every step the time since the last read times the step's chance. With this reference model, which gives a gesture but no chance per step, a read settles when two of the last three agree and the settled gesture is credited. In a clip made of the test frames (each held 0.5 s, 6 s per step), three of five credited thumbs anywhere from 2.8 to 6.8 s, and one full wash in three was reported missing thumbs; two of three credited 4.2–5.4 s. A step not done picked up at most 2.4 s from misreads of the step before it.
+- A wash starts when hands show up in the zone and ends when none have been seen for `HANDWASH_GAP_S` (1.5 s), or when an uploaded video starts over. Hands seen for less than 3 s in all are someone passing, not a wash.
+- A step is done once it has been credited the rule's minimum duration (1.5 s in the seeded rule). When the wash ends, a checked step not done is missing, and one incident is opened and closed at once, spanning the wash. Its snapshot lists the missed steps.
+- The 3 s minimum and 2.5 s gap in the table above were set for this reference model. The site classifier below uses 1.5 s for both.
 
 ## Site hand-washing step classifier
 
-`handwash_steps.onnx` is optional and, when present, is used instead of `handwash.onnx`. It was trained on the site's own sink, so it knows all six Bo Y te / WHO steps.
+`handwash_steps.onnx` is optional and, when present, is used instead of `handwash.onnx`. It was trained on the site's own sink, so it knows all six Bo Y te / WHO steps. It needs `hand_palm.onnx` and `hand_pose.onnx` (below): it looks at the hands the palm detector finds.
 
-- Built by `tools/handwash_classifier/train_handwash.py`: MobileNetV3-Small (torchvision, ImageNet start), fine-tuned on frames of `sample-data/videos/handwash - correct.mp4` (the reference wash) and `handwash - wrong.mp4`. Time spans per class are in `tools/handwash_classifier/labels/*.json`, labelled by eye from frames every 0.5 s; spans marked `unsure` and the 0.25 s at each step change are not trained on.
-- Classes: `none` (no hands), `other` (hands but no step: wetting, soap, rinsing), `palms`, `backs`, `interlaced`, `fingers`, `thumbs`, `fingertips`. Sides are not told apart. The class order is stored in the file's metadata.
-- Input: the hand-wash zone's bounding box, padded square on grey 127, 224 px, RGB, ImageNet mean and std. Output: 8 logits. A zone read as `none` gives no hit, so the wash gap counts; `other` keeps the wash going without crediting a step.
-- The zone must be drawn as it was for training: on the site camera, 22% to 82% of the frame width, full height.
-- SHA256 of the file built for this POC: `fcaf2e3c0af2018fa7b001539d5d9ea46cb6e417ccc5806781c81b24c009e105` (training is not bit-for-bit repeatable). The camera loop ran at its full 25 FPS with it (18 ms a frame, person detector included), against 17–19 FPS (about 90 ms) with the reference model.
+- Built by `tools/handwash_classifier/train_handwash.py`: MobileNetV3-Small (torchvision, ImageNet start), fine-tuned on frames of `sample-data/videos/handwash - correct.mp4` (the reference wash) and `handwash - wrong.mp4`. Time spans per class are in `tools/handwash_classifier/labels/*.json`, labelled by eye from frames every 0.25–0.5 s; the 0.25 s at each step change is not trained on, nor are spans marked `unsure` unless `--unsure` is passed.
+- Classes: `none` (no hands), `other` (hands but no step: wetting, soap, rinsing), `palms`, `backs_left`, `backs_right`, `interlaced`, `fingers`, `thumbs_left`, `thumbs_right`, `fingertips_left`, `fingertips_right`. Steps 2, 5 and 6 are done once per hand and have a class per hand, named by the hand cleaned: `thumbs_left` is the left thumb turned in the right palm. On the site camera the washer faces it from the top of the frame, so their right hand is on the left of the picture; the person in the sample clips confirmed the hands. Step 4 has one class: the correct clip does it once, fingers locked together. A frame flipped left to right in training has its hand swapped in the label. The class order is stored in the file's metadata; a file with one class per step still works, without telling the hands apart.
+- A step per hand is done once each hand has been credited half the rule's minimum (0.75 s of the seeded 1.5 s). With one hand short the step is missing for that hand, and the panel and incident say so: "5 Thumbs: right hand only", "Thumbs (left hand)".
+- Input: the square round the hands, from `hands_box` in `app/handpose.py`: centred between the two best palms the palm detector finds in the hand-wash zone, four palm widths a side, grey 127 where it runs off the frame, 224 px, RGB, ImageNet mean and std. Output: one logit per class. No palm in the zone, or hands read as `none`, gives no hit, so the wash gap counts; `other` keeps the wash going without crediting a step. The training script cuts its frames with the same functions.
+- The metadata entry `crop=hands` says so. A file without it, such as the first one built, looks at the zone's bounding box instead, and the zone then has to be drawn exactly as for training (22% to 82% of the frame width, full height). Drawn at 6% to 92% on another install, that file read backs of hands and almost nothing else: every wash of the wrong clip came out missing steps 1, 3, 4, 5 and 6.
+- Each read gives the chance of every step, and the wash credits each step the time since the last read times its chance. The vote of two in three, used before, made the credit depend on which frames the reads fell on: scored by a model that had not seen the correct clip, its fingertips were credited anywhere from 0.8 to 5.3 s over 200 plays, and a step near the minimum passed some plays and was missing in others. Credited by chance, the same fingertips got 2.5–4.8 s; with the deployed file in the camera loop, no step varied by more than 0.5 s between plays.
+- SHA256 of the file built for this POC: `8822e60ccb718fb6bf5bf8959e614fe0820af22e5a69b156082b9e6a1c7e5e1c` (training is not bit-for-bit repeatable). The hand-wash part of the loop takes about 29 ms a frame on 2 threads: the palm detector and the classifier five times a second, the overlay's joints ten times a second.
 
-Trained on the correct clip alone and tested on the wrong one, which it had not seen, it named the right class in 87.5% of frames: none 57/57, palms 75/75, backs 60/68, interlaced 19/23, other 440/504 (48 read as palms), fingers 24/44 (20 read as thumbs). Through the worker's wash logic on a live timeline (six timings), the correct clip passed every time with each step credited 5.2–9.2 s, and the wrong clip came out as two washes, both flagged every time. That model still credited thumbs in the second wrong wash, which leaves thumbs out.
+Each wrong wash was also scored by a model trained without it (leave one wash out), the honest measure of how it does on a wash it has not seen. Frames named right: first wrong wash 98.5% (its one thumb read as the right thumb 8/8), second 94.1% (every class per hand right but one left-thumb frame of four). Through the worker's own camera loop on the wrong clip, three plays each, both models gave the person's own account every time: the first wash missing step 3 and step 5 for the left hand (left thumb credited 0.2–0.3 s, every hand that did its step 1.3 s or more), the second missing step 4.
 
-The deployed file is trained on both clips. Live on the camera, the correct clip passed all three plays; each play of the wrong clip gave two incidents, missing interlaced, thumbs and fingertips, then thumbs and fingertips. Both clips are one person at one sink in one light: other people, sleeves and lighting need more labelled clips before the alerts can be trusted.
+Before the classes per hand, a model with one class per step, scored the same way, counted the single thumb of the first wrong wash as a whole step 5: credited 1.6–2.1 s, longer than that wash's 2 s backs of fingers, so no minimum could separate them.
+
+The deployed file is trained on both clips. Through the camera loop on the combined clip, four plays each with the zone drawn at 22–82% and at 6–92% of the width, every play gave the same three results: the correct wash passed, the first wrong wash missed step 3 and the left hand of step 5, the second missed step 4. Both clips are one person at one sink in one light: other people, sleeves and lighting need more labelled clips before the alerts can be trusted.
 
 Retrain from the repo root, outside the worker image:
 
 ```text
 pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu
-pip install onnx==1.16.2 opencv-python-headless==4.10.0.84 "numpy<2"
+pip install onnx==1.16.2 onnxruntime==1.20.1 opencv-python-headless==4.10.0.84 shapely==2.1.2 "numpy<2"
 python tools/handwash_classifier/train_handwash.py --train tools/handwash_classifier/labels/handwash-correct.json tools/handwash_classifier/labels/handwash-wrong.json --out models/handwash_steps.onnx
 ```
 
 Pass `--test labels/<clip>.json` with a clip left out of `--train` to see how it does on footage it has not seen.
 
-## Hand joints for the overlay
+## Hand joints and palms
 
-`hand_palm.onnx` and `hand_pose.onnx` are optional. With both, the camera view draws each washing hand as a skeleton of 21 joints in deep teal, with white-centred joints and the fingertips in amber. They only draw: the wash is judged by the step classifier.
+`hand_palm.onnx` and `hand_pose.onnx` are needed by the site step classifier above, which looks at the square round the palms the palm detector finds; with only the reference model they are optional. With both, the camera view draws each washing hand as a skeleton of 21 joints in deep teal, with white-centred joints and the fingertips in amber. The joints only draw: the wash is judged by the step classifier.
+
+- On the two sample clips the palm detector found at least one hand in every frame of every step, and in 95–99% of the frames with hands but no step.
 
 - Source: MediaPipe Hands as converted in the OpenCV Zoo, https://github.com/opencv/opencv_zoo, `models/palm_detection_mediapipe/palm_detection_mediapipe_2023feb.onnx` (SHA256 `78ff51c38496b7fc8b8ebdb6cc8c1abb02fa6c38427c6848254cdaba57fcce7c`) and `models/handpose_estimation_mediapipe/handpose_estimation_mediapipe_2023feb.onnx` (SHA256 `db0898ae717b76b075d9bf563af315b29562e11f8df5027a1ef07b02bef6d81c`). License: Apache-2.0.
 - `app/handpose.py` ports the zoo's pre- and post-processing to ONNX Runtime: the palm detector on the hand-wash zone's bounding box, then the landmark model on each palm, turned upright. Up to two hands; a hand the landmark model gives under 0.8 is dropped.

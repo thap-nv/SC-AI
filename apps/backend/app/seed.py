@@ -201,7 +201,7 @@ def _add_restricted_camera(db: Session, factory: Factory) -> Camera:
 
 
 def _add_handwash_camera(db: Session, factory: Factory) -> Camera:
-    """One camera above a sink, looking down. Each wash must show the WHO steps, each for at least 3 s."""
+    """One camera above a sink, looking down. Each wash must show the WHO steps, each for at least 1.5 s."""
     camera = Camera(factory_id=factory.id, code=HANDWASH_CAMERA, name="Handwash Station Camera 01", area="Handwash station", stream_type="FILE", stream_url="", enabled=True, ai_fps=10)
     db.add(camera)
     db.flush()
@@ -209,7 +209,7 @@ def _add_handwash_camera(db: Session, factory: Factory) -> Camera:
     db.add(zone)
     db.flush()
     name, event_type, condition, severity = HANDWASH_RULE
-    db.add(_rule(factory, camera, zone, name, event_type, condition, 3000, severity))
+    db.add(_rule(factory, camera, zone, name, event_type, condition, 1500, severity))
     db.flush()
     return camera
 

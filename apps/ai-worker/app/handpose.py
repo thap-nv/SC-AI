@@ -1,7 +1,8 @@
-"""Hand joints for the overlay: MediaPipe Hands from the OpenCV Zoo (Apache-2.0).
+"""Hands at the sink: MediaPipe Hands from the OpenCV Zoo (Apache-2.0).
 
-A palm detector finds each hand, then a landmark model gives its 21 joints. They are drawn on the
-camera view to show the hands being followed. They do not judge the wash; the step classifier does.
+A palm detector finds each hand, then a landmark model gives its 21 joints. The joints are drawn on the
+camera view to show the hands being followed. They do not judge the wash; the step classifier does, looking
+at the square round the palms that hands_box gives.
 
 Ported from the zoo's mp_palmdet.py and mp_handpose.py, run through ONNX Runtime like the other models.
 """
@@ -18,6 +19,8 @@ HAND_BONES = (
     (13, 17), (0, 17), (17, 18), (18, 19), (19, 20),
 )
 FINGERTIPS = (4, 8, 12, 16, 20)
+# The step classifier's view is this many palm widths a side: both hands and the wrists.
+HAND_SPAN = 4.0
 
 
 def build_hand_pose(mode: str, model_path: str, providers: list[str], threads: int = 1) -> "HandPose | None":
@@ -57,14 +60,16 @@ class HandPose:
         if image is None or image.size == 0:
             return []
         hands = []
-        for palm in self._palms(image)[: self.max_hands]:
+        for palm in self.palms(image)[: self.max_hands]:
             joints = self._joints(image, palm)
             if joints is not None:
                 hands.append(joints)
         return hands
 
-    def _palms(self, image: np.ndarray, score_floor: float = 0.5, overlap: float = 0.3) -> list[np.ndarray]:
+    def palms(self, image: np.ndarray, score_floor: float = 0.5, overlap: float = 0.3) -> list[np.ndarray]:
         """Palms as [x1, y1, x2, y2, 7 palm points as x, y, score], best first."""
+        if image is None or image.size == 0:
+            return []
         height, width = image.shape[:2]
         ratio = self.PALM_SIZE / max(height, width)
         resized = cv2.resize(image, (int(width * ratio), int(height * ratio)))
@@ -121,6 +126,36 @@ class HandPose:
         inverse = cv2.invertAffineTransform(rotation)
         centre = np.append(hand_box.sum(axis=0) / 2, 1.0) @ inverse.T
         return joints + centre + offset
+
+
+def hands_box(palms: list[np.ndarray]) -> list[float] | None:
+    """The square round both hands that the step classifier looks at, in the palms' pixels, or None without hands.
+
+    Centred between the two best palms and HAND_SPAN palm widths a side, so it shows the hands the same size
+    however the zone is drawn and however far the camera is. A second palm under half the size of the first
+    is something else, such as the tap.
+    """
+    if not palms:
+        return None
+    first = palms[0]
+    size = max(first[2] - first[0], first[3] - first[1])
+    boxes = np.array([palm[:4] for palm in palms[:2] if max(palm[2] - palm[0], palm[3] - palm[1]) >= size / 2], dtype=np.float64)
+    centre = (boxes[:, :2] + boxes[:, 2:]).mean(axis=0) / 2
+    spread = max(boxes[:, 2].max() - boxes[:, 0].min(), boxes[:, 3].max() - boxes[:, 1].min())
+    half = max(HAND_SPAN * size, 1.3 * spread) / 2
+    return [centre[0] - half, centre[1] - half, centre[0] + half, centre[1] + half]
+
+
+def hand_square(frame: np.ndarray, box: list[float], size: int) -> np.ndarray:
+    """The square box cut from the frame, grey 127 where it runs off the edge, resized to size."""
+    x1, y1 = int(round(box[0])), int(round(box[1]))
+    side = max(1, int(round(box[2] - box[0])))
+    canvas = np.full((side, side, 3), 127, dtype=np.uint8)
+    left, top = max(0, x1), max(0, y1)
+    right, bottom = min(frame.shape[1], x1 + side), min(frame.shape[0], y1 + side)
+    if right > left and bottom > top:
+        canvas[top - y1 : bottom - y1, left - x1 : right - x1] = frame[top:bottom, left:right]
+    return cv2.resize(canvas, (size, size), interpolation=cv2.INTER_AREA)
 
 
 def _crop_square(image: np.ndarray, box: np.ndarray, shift: tuple[float, float], enlarge: float, diagonal: bool):

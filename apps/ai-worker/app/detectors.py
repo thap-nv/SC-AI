@@ -2,6 +2,7 @@
 
 DEMO_MODE uses scripted detections so the workflow can be shown without weights.
 REAL_AI_MODE uses an installed ONNX detector for people and vehicles, with HOG (people only) as the fallback.
+COCO has no forklift, so a separate forklift detector adds them on cameras with zone rules.
 Every detection is a person or a vehicle. A vehicle carries a vehicle_type: car, truck, bus, motorcycle or forklift.
 Hand-washing gestures are a separate detector, run only on cameras with a hand-wash rule.
 """
@@ -12,6 +13,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.handpose import build_hand_pose, hand_square, hands_box
+from app.handwash import step_of
 from app.scenes import WASH_STEPS, scripted_objects, scripted_wash
 
 PERSON_CLASS = 0
@@ -93,50 +96,96 @@ class HogPersonDetector:
         return detections
 
 
-class OnnxObjectDetector:
-    """ONNX contract: one output tensor of shape Nx6 or 1xNx6.
+class ForkliftDetector:
+    """forklift.onnx: a YOLOv8 detector trained on forklifts, exported by tools/forklift_yolo/export_forklift_onnx.py.
 
-    Columns are x1, y1, x2, y2, score, class_id in the model's input pixel space.
-    class_id 0 is person and class_id 1 is forklift, reported as a vehicle of type forklift.
+    COCO has no forklift class. On the port clip YOLOX-Nano read the forklift as a truck at 0.55 or more, enough to
+    start a track, in 6 of 55 frames, and not at all while it was far off; this model found it in 52, and at 0.3 or
+    more, enough to keep a track going, in all 55. The whole frame goes in, letterboxed: the file is exported at
+    512x896, the shape of a 16:9 frame, about 60 ms on 2 threads. Input size and class names are read from the file.
+    Only forklift boxes are kept; people come from the person detector.
     """
 
-    def __init__(self, path: str, providers: list[str], threads: int = 2):
+    def __init__(self, path: str, providers: list[str], threads: int = 2, threshold: float = 0.30):
         self.session = onnx_session(path, providers, threads)
         self.input_name = self.session.get_inputs()[0].name
         shape = self.session.get_inputs()[0].shape
         self.input_h = int(shape[2]) if isinstance(shape[2], int) else 640
         self.input_w = int(shape[3]) if isinstance(shape[3], int) else 640
+        meta = self.session.get_modelmeta().custom_metadata_map
+        names = ast.literal_eval(meta["names"]) if "names" in meta else {}
+        forklift = [index for index, name in names.items() if name == "forklift"]
+        if not forklift:
+            raise ValueError("forklift.onnx names no forklift class")
+        self.forklift_class = forklift[0]
+        self.classes = len(names)
+        self.threshold = threshold
 
-    def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[dict]:
-        del zones, now, hold_inside
-        resized = cv2.resize(frame, (self.input_w, self.input_h))
-        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-        tensor = np.transpose(rgb, (2, 0, 1))[None, :, :, :]
-        output = np.asarray(self.session.run(None, {self.input_name: tensor})[0])
-        if output.ndim == 3:
-            output = output[0]
-        if output.ndim != 2 or output.shape[1] < 6:
-            raise ValueError(f"Unsupported ONNX output shape {output.shape}. Expected Nx6.")
-        sx = frame.shape[1] / self.input_w
-        sy = frame.shape[0] / self.input_h
-        detections = []
-        for row in output:
-            score = float(row[4])
-            if score < 0.35:
+    def detect(self, frame) -> list[dict]:
+        height, width = frame.shape[:2]
+        canvas, transform = _model_canvas(frame, self.input_w, self.input_h, True)
+        rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        output = np.asarray(self.session.run(None, {self.input_name: np.transpose(rgb, (2, 0, 1))[None]})[0])
+        found = []
+        for class_id, score, (x1, y1, x2, y2) in decode_boxes(output, self.classes, self.input_w, self.input_h, *transform, threshold=self.threshold):
+            if class_id != self.forklift_class:
                 continue
-            class_id = int(row[5])
-            if class_id not in (0, 1):
-                continue
-            detections.append(
+            found.append(
                 {
-                    "class_name": "person" if class_id == 0 else "vehicle",
-                    "class_id": PERSON_CLASS if class_id == 0 else VEHICLE_CLASS,
+                    "class_name": "vehicle",
+                    "class_id": VEHICLE_CLASS,
+                    "vehicle_type": "forklift",
                     "confidence": score,
-                    "bbox_xyxy": [float(row[0]) * sx, float(row[1]) * sy, float(row[2]) * sx, float(row[3]) * sy],
-                    "vehicle_type": None if class_id == 0 else "forklift",
+                    "bbox_xyxy": [float(np.clip(x1, 0, width - 1)), float(np.clip(y1, 0, height - 1)), float(np.clip(x2, 0, width - 1)), float(np.clip(y2, 0, height - 1))],
                 }
             )
-        return detections
+        return _nms(found, 0.45, by_confidence=True)
+
+
+class NoForkliftDetector:
+    """DEMO scripts its forklifts, and REAL mode without forklift.onnx has only the person detector's trucks."""
+
+    def detect(self, frame) -> list[dict]:
+        del frame
+        return []
+
+
+# COCO vehicles the person detector knows well, and the score from which its read wins over the forklift model's.
+# The forklift model, trained on photos with no cars in them, read the port clip's white car as a forklift at up to
+# 0.89, and once boxed the car and the forklift behind it as one forklift. The person detector read that car at 0.8
+# or more in every frame, and the forklift as a car at most 0.61, while it left the frame.
+NOT_FORKLIFTS = {"car", "bus"}
+SURE_CAR = 0.7
+
+
+def with_forklifts(detections: list[dict], forklifts: list[dict]) -> list[dict]:
+    """The person detector's boxes plus the forklifts.
+
+    A forklift box on a sure COCO car or bus is dropped. Any other COCO vehicle on a forklift box, such as a truck,
+    a motorcycle or a weak car, is the forklift misread, and gives way to it. People are kept: a driver sits inside
+    the forklift's box.
+    """
+    cars = [
+        detection["bbox_xyxy"]
+        for detection in detections
+        if detection["class_name"] == "vehicle" and detection.get("vehicle_type") in NOT_FORKLIFTS and detection["confidence"] >= SURE_CAR
+    ]
+    forklifts = [forklift for forklift in forklifts if not any(_iou(forklift["bbox_xyxy"], car) >= 0.3 or share_inside(car, forklift["bbox_xyxy"]) >= 0.5 for car in cars)]
+    kept = [
+        detection
+        for detection in detections
+        if detection["class_name"] != "vehicle"
+        or detection["bbox_xyxy"] in cars
+        or all(_iou(detection["bbox_xyxy"], forklift["bbox_xyxy"]) < 0.3 for forklift in forklifts)
+    ]
+    return kept + forklifts
+
+
+def build_forklift_detector(mode: str, model_path: str, device: str, threads: int = 2):
+    path = Path(model_path) / "forklift.onnx"
+    if mode.upper() == "DEMO" or not path.exists():
+        return NoForkliftDetector()
+    return ForkliftDetector(str(path), providers_for(device), threads)
 
 
 class DemoPPEClassifier:
@@ -572,6 +621,13 @@ def _iou(a: list[float], b: list[float]) -> float:
     return inter / area if area else 0.0
 
 
+def share_inside(inner: list[float], outer: list[float]) -> float:
+    """How much of the inner box lies within the outer one, from 0 to 1."""
+    width = max(0.0, min(inner[2], outer[2]) - max(inner[0], outer[0]))
+    height = max(0.0, min(inner[3], outer[3]) - max(inner[1], outer[1]))
+    return width * height / max(1e-6, (inner[2] - inner[0]) * (inner[3] - inner[1]))
+
+
 def onnx_session(path: str, providers: list[str], threads: int):
     """A small thread pool that sleeps between frames.
 
@@ -599,19 +655,40 @@ class YoloxDetector:
     """Official YOLOX ONNX models, Apache-2.0, trained on COCO. Nano and Tiny take 416 pixels, S and up take 640;
     the size is read from the model. People and vehicles (COCO_VEHICLES) are kept.
 
+    A wide frame goes in as overlapping squares across it, two for 16:9. Squeezed whole into Nano's square, a worker
+    65 px tall in the 1280x720 port clip came out 19 px tall and scored 0.55 or more, enough to start a track, in 2 of
+    49 frames; on two squares, in 44. It takes twice as long, 36 ms for Nano on 2 threads. A box cut by the edge two
+    squares share is joined with the rest of it from the other square.
+
     Boxes down to 0.30 are kept so the tracker can hold on to a partly hidden person.
     The tracker only starts a new person or vehicle from a confident box.
     """
 
-    def __init__(self, path: str, providers: list[str], threads: int = 2, threshold: float = 0.30):
+    def __init__(self, path: str, providers: list[str], threads: int = 2, threshold: float = 0.30, tiles: bool = True):
         self.session = onnx_session(path, providers, threads)
         self.input_name = self.session.get_inputs()[0].name
         size = self.session.get_inputs()[0].shape[2]
         self.input_size = int(size) if isinstance(size, int) else 416
         self.threshold = threshold
+        self.tiles = tiles
 
     def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[dict]:
         del zones, now, hold_inside
+        height, width = frame.shape[:2]
+        found = []
+        for index, (left, right) in enumerate(tile_spans(width, height) if self.tiles else [(0, width)]):
+            for detection in self._infer(frame[:, left:right], left):
+                x1, _, x2, _ = detection["bbox_xyxy"]
+                detection["tile"] = index
+                detection["cut"] = (left > 0 and x1 <= left + CUT_EDGE_PX) or (right < width and x2 >= right - 1 - CUT_EDGE_PX)
+                found.append(detection)
+        joined = join_cut(found)
+        for detection in joined:
+            del detection["tile"], detection["cut"]
+        return _nms(joined, 0.45, by_confidence=True)
+
+    def _infer(self, frame, offset_x: int = 0) -> list[dict]:
+        """Boxes in frame pixels, offset_x added back for a square cut from a wider frame."""
         height, width = frame.shape[:2]
         canvas, scale, pad_x, pad_y = _letterbox(frame, self.input_size)
         tensor = np.transpose(canvas, (2, 0, 1))[None, :, :, :]
@@ -647,14 +724,57 @@ class YoloxDetector:
                         "vehicle_type": COCO_VEHICLES.get(coco),
                         "confidence": float(score[index]),
                         "bbox_xyxy": [
-                            float(np.clip(x1, 0, width - 1)),
+                            float(np.clip(x1, 0, width - 1)) + offset_x,
                             float(np.clip(y1, 0, height - 1)),
-                            float(np.clip(x2, 0, width - 1)),
+                            float(np.clip(x2, 0, width - 1)) + offset_x,
                             float(np.clip(y2, 0, height - 1)),
                         ],
                     }
                 )
         return _nms(detections, 0.45, by_confidence=True)
+
+
+# A box this close to the edge two squares share may carry on into the other square.
+CUT_EDGE_PX = 8
+
+
+def tile_spans(width: int, height: int) -> list[tuple[int, int]]:
+    """Columns [left, right) of the squares a frame is detected in: one frame-high square per started height of
+    width, evenly overlapping. A frame not much wider than tall stays whole."""
+    if width <= 1.2 * height:
+        return [(0, width)]
+    count = int(np.ceil(width / height))
+    step = (width - height) / (count - 1)
+    return [(round(index * step), round(index * step) + height) for index in range(count)]
+
+
+def join_cut(found: list[dict]) -> list[dict]:
+    """Each box cut by a shared edge, joined with the same object's box from the other square.
+
+    The other box is the same class from a different square and covers at least half of the smaller of the two.
+    The joined box spans both and keeps the higher score. A cut box with no such partner, such as an object only
+    one square found, is kept as it is.
+    """
+    kept = list(found)
+    for cut in sorted((item for item in found if item["cut"]), key=lambda item: -item["confidence"]):
+        if not any(item is cut for item in kept):
+            continue
+        partners = [item for item in kept if item["tile"] != cut["tile"] and item["class_name"] == cut["class_name"] and _covers_half(cut["bbox_xyxy"], item["bbox_xyxy"])]
+        if not partners:
+            continue
+        partner = max(partners, key=lambda item: item["confidence"])
+        a, b = cut["bbox_xyxy"], partner["bbox_xyxy"]
+        best = cut if cut["confidence"] >= partner["confidence"] else partner
+        joined = {**best, "bbox_xyxy": [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])], "cut": False}
+        kept = [item for item in kept if item is not cut and item is not partner] + [joined]
+    return kept
+
+
+def _covers_half(a: list[float], b: list[float]) -> bool:
+    """The two boxes share at least half of the smaller one. The cut end of a car can be lower than its roof, so
+    rows alone do not tell: the port clip's car, cut at the shared edge, spanned 56% of the whole car's rows."""
+    smaller, larger = sorted((a, b), key=lambda box: (box[2] - box[0]) * (box[3] - box[1]))
+    return share_inside(smaller, larger) >= 0.5
 
 
 def _letterbox(frame: np.ndarray, size: int) -> tuple[np.ndarray, float, int, int]:
@@ -672,7 +792,6 @@ def build_detectors(mode: str, model_path: str, device: str, threads: int = 2):
     root = Path(model_path)
     providers = providers_for(device)
     person_onnx = root / "person.onnx"
-    forklift_onnx = root / "forklift.onnx"
     ppe_onnx = root / "ppe.onnx"
     face_onnx = root / "face.onnx"
     mask_onnx = root / "mask.onnx"
@@ -687,9 +806,6 @@ def build_detectors(mode: str, model_path: str, device: str, threads: int = 2):
     else:
         detector = HogPersonDetector()
         person_version = "hog-v1"
-    if forklift_onnx.exists() and not isinstance(detector, OnnxObjectDetector):
-        # A dedicated forklift file is used by wrapping both detectors below.
-        pass
     ppe_name, ppe_version = "ppe-detector", "unloaded"
     if ppe_onnx.exists():
         ppe = OnnxPPEDetector(str(ppe_onnx), providers, threads)
@@ -700,20 +816,7 @@ def build_detectors(mode: str, model_path: str, device: str, threads: int = 2):
         masks = MaskClassifier(str(mask_onnx), providers, 1) if faces is not None and mask_onnx.exists() else None
         ppe = ColorPPEClassifier(faces, masks)
         ppe_version = "color-v3" + ("+face" if faces else "") + ("+mask" if masks else "")
-    if forklift_onnx.exists():
-        detector = _ForkliftUnion(detector, OnnxObjectDetector(str(forklift_onnx), providers, threads))
     return detector, ppe, person_name, person_version, ppe_name, ppe_version
-
-
-class _ForkliftUnion:
-    def __init__(self, person_detector, forklift_detector):
-        self.person_detector = person_detector
-        self.forklift_detector = forklift_detector
-
-    def detect(self, frame, zones, now, hold_inside):
-        found = self.person_detector.detect(frame, zones, now, hold_inside)
-        forklifts = [item for item in self.forklift_detector.detect(frame, zones, now, hold_inside) if item["class_name"] == "vehicle"]
-        return found + forklifts
 
 
 class VehicleTyper:
@@ -824,43 +927,68 @@ class OnnxHandwashDetector:
 class OnnxHandwashClassifier:
     """handwash_steps.onnx: the site's own step classifier, built by tools/handwash_classifier/train_handwash.py.
 
-    It looks at each hand-wash zone's bounding box, padded square on grey and 224 px, and names one class
-    for it: none, other (hands, but no step: wetting, soap, rinsing) or one of the six steps. The zone has to
-    be drawn as it was for training, around the sink. Trained on the site's two sample clips, it named the
-    right class in 87.5% of the frames of the clip it had not seen.
+    It names one class for the hands at each hand-wash zone: none, other (hands, but no step: wetting, soap,
+    rinsing) or one of the six steps, steps 2, 5 and 6 per hand when its classes say so. A model trained on hand crops (metadata crop=hands) looks at the square
+    round the palms found in the zone, so the zone only has to cover the sink. An older one looks at the zone's
+    bounding box, which then has to be drawn exactly as it was for training: drawn wider on the site's wrong
+    clip, it read backs of hands and nothing else.
     No hands gives no hit; other keeps a wash going without crediting a step.
     """
 
     SIZE = 224
+    STORED = 256
     MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
     STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
     CLASSES = ("none", "other", "palms", "backs", "interlaced", "fingers", "thumbs", "fingertips")
 
-    def __init__(self, path: str, providers: list[str], threads: int = 1):
+    def __init__(self, path: str, providers: list[str], threads: int = 1, hands=None):
         self.session = onnx_session(path, providers, threads)
         self.input_name = self.session.get_inputs()[0].name
         meta = self.session.get_modelmeta().custom_metadata_map
         self.classes = meta["classes"].split(",") if "classes" in meta else list(self.CLASSES)
-        self.steps = {name for name in self.classes if name in WASH_STEPS}
+        # Steps it reads, or parts per hand such as thumbs_left for a model that tells the hands apart.
+        self.steps = {name for name in self.classes if step_of(name) in WASH_STEPS}
         self.name, self.version = "handwash-steps", meta.get("trained_on", "site")
+        self.crop = meta.get("crop", "zone")
+        # The palm detector, for a model trained on hand crops.
+        self.hands = hands
 
-    def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[tuple[str, float, list[float]]]:
+    def detect(self, frame, zones: list[dict], now: float, hold_inside: bool) -> list[tuple]:
+        """(class, chance, box, chance of each step) per zone with hands. The wash credits steps by the last."""
         del now, hold_inside
-        height, width = frame.shape[:2]
         found = []
         for zone in zones:
-            points = zone.get("polygon") or []
-            if len(points) < 3:
+            read = self.chances(frame, zone)
+            if read is None:
                 continue
-            xs, ys = [point[0] for point in points], [point[1] for point in points]
-            box = [min(xs) * width, min(ys) * height, max(xs) * width, max(ys) * height]
-            rgb = cv2.cvtColor(zone_square(frame, box, self.SIZE), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-            logits = np.asarray(self.session.run(None, {self.input_name: ((rgb - self.MEAN) / self.STD).transpose(2, 0, 1)[None]})[0]).reshape(-1)
-            chances = _softmax(logits)
+            chances, box = read
             best = int(np.argmax(chances))
             if self.classes[best] != "none":
-                found.append((self.classes[best], round(float(chances[best]), 3), box))
+                steps = {name: float(chances[index]) for index, name in enumerate(self.classes) if name in self.steps}
+                found.append((self.classes[best], round(float(chances[best]), 3), box, steps))
         return found
+
+    def chances(self, frame, zone: dict) -> tuple[np.ndarray, list[float]] | None:
+        """The chance of each class at this zone and the box looked at, or None when no hands are found there."""
+        height, width = frame.shape[:2]
+        points = zone.get("polygon") or []
+        if len(points) < 3:
+            return None
+        xs, ys = [point[0] for point in points], [point[1] for point in points]
+        box = [min(xs) * width, min(ys) * height, max(xs) * width, max(ys) * height]
+        if self.crop == "hands":
+            left, top = max(0, int(box[0])), max(0, int(box[1]))
+            square = hands_box(self.hands.palms(frame[top : max(0, int(box[3])), left : max(0, int(box[2]))]))
+            if square is None:
+                return None
+            square = [square[0] + left, square[1] + top, square[2] + left, square[3] + top]
+            image = cv2.resize(hand_square(frame, square, self.STORED), (self.SIZE, self.SIZE), interpolation=cv2.INTER_AREA)
+            box = [max(0.0, square[0]), max(0.0, square[1]), min(float(width), square[2]), min(float(height), square[3])]
+        else:
+            image = zone_square(frame, box, self.SIZE)
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        logits = np.asarray(self.session.run(None, {self.input_name: ((rgb - self.MEAN) / self.STD).transpose(2, 0, 1)[None]})[0]).reshape(-1)
+        return _softmax(logits), box
 
 
 def zone_square(frame: np.ndarray, box: list[float], size: int) -> np.ndarray:
@@ -910,7 +1038,12 @@ def build_handwash_detector(mode: str, model_path: str, device: str, threads: in
         return DemoHandwashDetector()
     steps = Path(model_path) / "handwash_steps.onnx"
     if steps.exists():
-        return OnnxHandwashClassifier(str(steps), providers_for(device), threads)
+        classifier = OnnxHandwashClassifier(str(steps), providers_for(device), threads)
+        if classifier.crop == "hands":
+            classifier.hands = build_hand_pose(mode, model_path, providers_for(device), threads)
+            if classifier.hands is None:
+                raise FileNotFoundError("handwash_steps.onnx looks at the hands and needs hand_palm.onnx and hand_pose.onnx")
+        return classifier
     path = Path(model_path) / "handwash.onnx"
     if path.exists():
         return OnnxHandwashDetector(str(path), providers_for(device), threads, scale=scale)

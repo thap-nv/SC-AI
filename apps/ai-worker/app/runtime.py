@@ -12,10 +12,24 @@ import numpy as np
 from app.alignment import ViewAligner, ZoneView
 from app.api_client import ApiClient
 from app.config import Settings
-from app.detectors import PPE_ITEMS, HintVehicleTyper, HogPersonDetector, NoHandwashDetector, UnknownPPEClassifier, build_detectors, build_handwash_detector, build_vehicle_typer, providers_for
+from app.detectors import (
+    PPE_ITEMS,
+    HintVehicleTyper,
+    HogPersonDetector,
+    NoForkliftDetector,
+    NoHandwashDetector,
+    UnknownPPEClassifier,
+    build_detectors,
+    build_forklift_detector,
+    build_handwash_detector,
+    build_vehicle_typer,
+    providers_for,
+    share_inside,
+    with_forklifts,
+)
 from app.drawing import annotate, jpeg_bytes
 from app.handpose import build_hand_pose
-from app.handwash import HANDWASH_CONDITION, STEP_NAMES, Wash, WashTracker, missing_steps, wash_checks
+from app.handwash import HANDWASH_CONDITION, STEP_NAMES, Wash, WashTracker, checked_parts, missing_steps, wash_checks
 from app.logging_utils import event
 from app.metrics import camera_fps, camera_up, detections_total, dropped_frames, frames_processed, incidents_created, inference_latency
 from app.rule_engine import ALLOWED_VEHICLES, PPE_CONDITIONS, Observation, RuleConfig, RuleEngine
@@ -34,6 +48,9 @@ VEHICLE_READ_EVERY_S = 0.5
 VEHICLE_VOTE_WINDOW = 5
 # A person this much inside a vehicle's box is taken to be riding it, such as a forklift driver.
 IN_VEHICLE_SHARE = 0.6
+# Rules that ask who is in a zone. Forklifts are looked for on their cameras: a vehicle rule needs to know a
+# forklift is not a truck, and a person rule would count the driver of an unseen forklift as someone walking in.
+PRESENCE_CONDITIONS = {"PERSON_INSIDE", "VEHICLE_INSIDE"}
 # Hand joints are found again this often while a wash is in view: the overlay is drawn at most 10 times a second.
 # About 16 ms each on the sink area.
 HAND_POSE_EVERY_S = 0.1
@@ -163,6 +180,10 @@ class CameraLoop:
         # Incidents opened lately per rule, so a person the tracker loses and finds again under a new id
         # carries on the same incident instead of opening a second one.
         self.recent_incidents: dict[str, list[dict]] = {}
+        # The uploaded video that has started over at least once, and when each rule's last incident ended:
+        # from the second play on a rule alerts at most once per cooldown (see _quiet_until).
+        self.looped_url: str | None = None
+        self.rule_ended_at: dict[str, float] = {}
         self.aligner = ViewAligner(self.store.get_bytes)
         self.config: dict | None = None
         self.config_at = float("-inf")
@@ -172,11 +193,14 @@ class CameraLoop:
         self.vehicle_typer = self._load_vehicle_typer()
         self.vehicle_votes: dict[str, deque] = {}
         self.vehicle_seen: dict[str, tuple[float, str]] = {}
+        # Loaded on first use: only a camera with a person or vehicle zone rule looks for forklifts.
+        self.forklifts = None
         # Loaded on first use: only a camera with a hand-wash rule needs the gesture model.
         self.gestures = None
         self.gestures_read_at = float("-inf")
         self.washes = WashTracker(gap_s=settings.handwash_gap_s)
-        # Hand joints for the overlay, loaded with the gesture model. None when the files are missing.
+        # Hand joints for the overlay, loaded with the gesture model: the step classifier's own when it looks at
+        # the hands. None when the files are missing.
         self.hand_pose = None
         self.hand_pose_at = float("-inf")
 
@@ -193,6 +217,16 @@ class CameraLoop:
         except Exception:
             log.exception("vehicle typer failed; the detector's class is used and forklifts read as trucks")
             return HintVehicleTyper("coco-class", "no-forklift")
+
+    def _load_forklifts(self):
+        try:
+            forklifts = build_forklift_detector(self.settings.ai_mode, self.settings.model_path, self.settings.ai_device, self.settings.ai_threads)
+        except Exception:
+            log.exception("forklift model failed; forklifts are only the person detector's trucks", extra={"camera_id": self.camera_id})
+            return NoForkliftDetector()
+        if isinstance(forklifts, NoForkliftDetector) and self.settings.ai_mode.upper() != "DEMO":
+            log.warning("forklift.onnx not found; forklifts are only the person detector's trucks", extra={"camera_id": self.camera_id})
+        return forklifts
 
     def _load_gestures(self):
         try:
@@ -218,6 +252,10 @@ class CameraLoop:
                 self.stop.wait(2)
                 continue
             if not camera.get("enabled"):
+                # Turned back on, the camera starts a new scene: kept, the incidents open when it went off
+                # carried on to whoever stood there minutes later, and that person raised no alert.
+                self._end_scene(camera, time.time())
+                self.washes.forget(set())
                 self._heartbeat(camera, "DISABLED", [], 0, 0)
                 self.stop.wait(2)
                 continue
@@ -278,6 +316,10 @@ class CameraLoop:
             self.tracker = PersonTracker(frame_rate=fps_setting)
             self.tracker_fps = fps_setting
         now = time.time()
+        # An uploaded video starting over is a cut to a new scene, as for hand washes below.
+        rewound = self.source.take_rewound()
+        if rewound:
+            self._end_scene(camera, now)
         hold = now < self.hold_until
         infer_started = time.perf_counter()
         views = self.aligner.update(frame, camera.get("zones") or [], now, multi_view=bool(camera.get("multi_view")))
@@ -287,8 +329,15 @@ class CameraLoop:
         conditions = {rule["condition_type"] for rule in camera.get("rules") or [] if rule.get("enabled")}
         hands_only = conditions == {HANDWASH_CONDITION}
         detections = [] if hands_only else self.detector.detect(frame, camera.get("zones") or [], now, hold)
+        if conditions & PRESENCE_CONDITIONS:
+            if self.forklifts is None:
+                self.forklifts = self._load_forklifts()
+            detections = with_forklifts(detections, self.forklifts.detect(frame))
         tracks = self.tracker.update(detections)
-        enriched = self._enrich(frame, camera, detections, tracks, now) + self._handwash(frame, camera, now, hold, self.source.take_rewound())
+        enriched = self._enrich(frame, camera, detections, tracks, now) + self._handwash(frame, camera, now, hold, rewound)
+        if rewound:
+            # Set after the washes cut off at the end of the first play are reported, which count as that play's.
+            self.looped_url = camera.get("stream_url")
         latency = time.perf_counter() - infer_started
         inference_latency.labels(camera_id=camera["id"]).observe(latency)
         frames_processed.labels(camera_id=camera["id"]).inc()
@@ -323,7 +372,7 @@ class CameraLoop:
             ppe, ppe_scores, checks, vehicle_type, in_vehicle = {item: "UNKNOWN" for item in PPE_ITEMS}, {}, [], "", False
             if track["class_name"] == "person":
                 ppe, ppe_scores = self._track_ppe(frame, track, hint, now)
-                in_vehicle = any(_share_inside(track["bbox_xyxy"], other) >= IN_VEHICLE_SHARE for other in vehicle_boxes)
+                in_vehicle = any(share_inside(track["bbox_xyxy"], other) >= IN_VEHICLE_SHARE for other in vehicle_boxes)
                 checks = track_checks(camera.get("rules") or [], zones, box, ppe, "person", in_vehicle=in_vehicle)
             elif track["class_name"] == "vehicle":
                 vehicle_type = self._vehicle_type(frame, track, hint, now)
@@ -351,9 +400,9 @@ class CameraLoop:
             return []
         if self.gestures is None:
             self.gestures = self._load_gestures()
-            self.hand_pose = self._load_hand_pose()
+            self.hand_pose = getattr(self.gestures, "hands", None) or self._load_hand_pose()
         skipped ={step.strip() for step in self.settings.handwash_skip_steps.split(",")}
-        checked = set(self.gestures.steps) - skipped
+        checked = checked_parts(set(self.gestures.steps), skipped)
         if restarted:
             for zone_id, wash in self.washes.finish_all():
                 self._report_wash(camera, watched[zone_id], wash, [rule for rule in rules if rule["zone_id"] == zone_id], checked)
@@ -409,6 +458,9 @@ class CameraLoop:
             if not missing:
                 event(log, "hand wash complete", camera_id=camera["id"], rule_id=rule["id"], track_id=wash.id)
                 continue
+            if self._quiet_until(camera, rule["id"], rule_config(rule).cooldown_s, wash.last_seen_at) is not None:
+                event(log, f"hand wash incomplete, missed {', '.join(missing)}; not reported, the video is playing again", camera_id=camera["id"], rule_id=rule["id"], track_id=wash.id)
+                continue
             track = _wash_track(wash, wash.frame, wash_checks(wash, checked, min_step_s, finished=True))
             note = f"Wash {round(wash.seen_s)} s, missed: " + ", ".join(STEP_NAMES[step] for step in missing)
             crop = crop_of(wash.frame, wash.box)
@@ -433,6 +485,7 @@ class CameraLoop:
                 if body.get("reason") != "created":
                     continue
                 self.api.close_incident(body["id"], iso(wash.last_seen_at))
+                self._note_end(rule["id"], wash.last_seen_at)
             except Exception:
                 log.exception("hand wash incident failed", extra={"camera_id": camera["id"], "rule_id": rule["id"], "track_id": wash.id})
                 continue
@@ -524,21 +577,62 @@ class CameraLoop:
                     )
                 )
         actions.extend(self.engine.expire_missing(configs, now, visible))
+        # An incident closing on this frame counts for _quiet_until before the opens ahead of it in the list.
+        for action in actions:
+            if action.kind == "close" and action.incident_id:
+                self._note_end(action.rule_id, action.ended_at or now)
         annotated = None
         for action in actions:
             if action.kind == "open":
                 if self._carry_on(camera, action, configs[action.rule_id].cooldown_s, now, visible):
+                    continue
+                quiet = self._quiet_until(camera, action.rule_id, configs[action.rule_id].cooldown_s, now)
+                if quiet is not None:
+                    self.engine.force_cooldown(action.rule_id, action.track_id, quiet)
                     continue
                 if annotated is None:
                     annotated = annotate(frame, camera.get("zones") or [], tracks)
                 self._open(camera, frame, action, annotated_frame=annotated)
             elif action.kind == "close" and action.incident_id:
                 self._remember(action.rule_id, action.incident_id, action.track_id, action.bbox, now)
-                try:
-                    self.api.close_incident(action.incident_id, iso(action.ended_at or now))
-                    event(log, "incident closed", camera_id=camera["id"], track_id=action.track_id, rule_id=action.rule_id, incident_id=action.incident_id)
-                except Exception:
-                    log.exception("incident close failed", extra={"camera_id": camera["id"], "incident_id": action.incident_id, "rule_id": action.rule_id, "track_id": action.track_id})
+                self._close(camera, action, now)
+
+    def _note_end(self, rule_id: str, at: float) -> None:
+        self.rule_ended_at[rule_id] = max(self.rule_ended_at.get(rule_id, float("-inf")), at)
+
+    def _close(self, camera: dict, action, now: float) -> None:
+        self._note_end(action.rule_id, action.ended_at or now)
+        try:
+            self.api.close_incident(action.incident_id, iso(action.ended_at or now))
+            event(log, "incident closed", camera_id=camera["id"], track_id=action.track_id, rule_id=action.rule_id, incident_id=action.incident_id)
+        except Exception:
+            log.exception("incident close failed", extra={"camera_id": camera["id"], "incident_id": action.incident_id, "rule_id": action.rule_id, "track_id": action.track_id})
+
+    def _end_scene(self, camera: dict, now: float) -> None:
+        """Closes every open incident and forgets them, so whoever is seen next raises a new alert.
+
+        For a scene that breaks: an uploaded video starting over, or the camera turned off. Without it a
+        10 s clip played on a loop had the person at its start carry on the incident of the one at its end,
+        within the cooldown and close by, and after the first play no alert came again.
+        """
+        configs = {rule["id"]: rule_config(rule) for rule in camera.get("rules") or [] if rule.get("enabled")}
+        for action in self.engine.end_all(configs, now):
+            if action.kind == "close" and action.incident_id:
+                self._close(camera, action, now)
+        self.recent_incidents.clear()
+
+    def _quiet_until(self, camera: dict, rule_id: str, cooldown_s: float, now: float) -> float | None:
+        """When the rule may alert again on an uploaded video playing over, or None if it may now.
+
+        Each play of a clip is a new scene (see _end_scene), so every play raised its alerts again: a 10 s clip
+        with a person and a car in the lane made 12 incidents a minute, all repeats. From the second play on a
+        rule alerts at most once per cooldown, counted from the end of its last incident. The first play, and
+        an RTSP camera, alert as before. A cooldown of 0 turns it off.
+        """
+        if cooldown_s <= 0 or self.looped_url is None or self.looped_url != camera.get("stream_url"):
+            return None
+        until = now + 1.0 if self.engine.has_open(rule_id) else self.rule_ended_at.get(rule_id, float("-inf")) + cooldown_s
+        return until if until > now else None
 
     def _carry_on(self, camera: dict, action, window_s: float, now: float, visible: set[str]) -> bool:
         """A new track standing where a lost one left off, under the same rule, keeps that incident."""
@@ -706,11 +800,3 @@ def _near(a, b) -> bool:
     centre_b = ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)
     reach = 1.5 * max(a[2] - a[0], b[2] - b[0])
     return ((centre_a[0] - centre_b[0]) ** 2 + (centre_a[1] - centre_b[1]) ** 2) ** 0.5 <= reach
-
-
-def _share_inside(inner: list[float], outer: list[float]) -> float:
-    """How much of the inner box lies within the outer one, from 0 to 1."""
-    width = max(0.0, min(inner[2], outer[2]) - max(inner[0], outer[0]))
-    height = max(0.0, min(inner[3], outer[3]) - max(inner[1], outer[1]))
-    area = max(1e-6, (inner[2] - inner[0]) * (inner[3] - inner[1]))
-    return width * height / area

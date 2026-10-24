@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # all six timings tried, for gaps from 2 to 3 s. The reference camera, hands a tenth of the frame wide, wants 1.0.
     handwash_scale: float = 0.6
     # Hands out of view this long end a wash. See WASH_GAP_S in app/handwash.py.
-    handwash_gap_s: float = 2.5
+    handwash_gap_s: float = 1.5
 
 
 @lru_cache

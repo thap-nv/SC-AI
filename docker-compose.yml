@@ -95,7 +95,7 @@ services:
       # Frame scale for the reference handwash.onnx only: 0.6 for the site's sink camera, 1.0 for one as far away as the reference.
       HANDWASH_SCALE: ${HANDWASH_SCALE:-0.6}
       # Seconds without hands that end a wash.
-      HANDWASH_GAP_S: ${HANDWASH_GAP_S:-2.5}
+      HANDWASH_GAP_S: ${HANDWASH_GAP_S:-1.5}
       WORKER_ID: ${WORKER_ID:-worker-01}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-safetyadmin}

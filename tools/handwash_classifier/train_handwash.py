@@ -2,26 +2,33 @@
 
 Classes, in this order: none (no hands), other (hands, but no step: wetting, soap, rinsing,
 changing step), then the six Bo Y te / WHO steps: palms, backs, interlaced, fingers, thumbs,
-fingertips. Sides are not told apart.
+fingertips. Backs, thumbs and fingertips are done once per hand and have a class per hand, named
+by the hand cleaned: thumbs_left is the left thumb turned in the right palm. On the site camera
+the washer faces it from the top of the frame, so their right hand is on the left of the picture.
 
 Training data is labelled video: a JSON file per clip under labels/ gives the video, the crop
-(the hand-wash zone's bounding box, as fractions of the frame) and time spans per class. Frames
-within 0.25 s of a span's edge are left out, and spans marked "unsure" are not trained on.
+(the hand-wash zone's bounding box, as fractions of the frame, where the hands are looked for) and
+time spans per class. Frames within 0.25 s of a span's edge are left out, and spans marked "unsure"
+are trained on only with --unsure.
 
-The worker feeds the model what sink_crop() makes here: the zone's bounding box, padded square
-on grey 127, 224 px, RGB, ImageNet mean and std.
+The model sees what the worker feeds it: the square round the palms that app.handpose.hands_box
+gives, cut by hand_square, 224 px, RGB, ImageNet mean and std. Both come from the worker's own code,
+so a change there changes training too. Frames where the palm detector finds no hands are left out:
+the worker does not run the model on them.
 
 Run outside the worker image, from the repo root:
 
     pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu
-    pip install onnx==1.16.2 opencv-python-headless==4.10.0.84 "numpy<2"
-    python tools/handwash_classifier/train_handwash.py --train tools/handwash_classifier/labels/handwash-correct.json \
-        --test tools/handwash_classifier/labels/handwash-wrong.json --out models/handwash_steps.onnx
+    pip install onnx==1.16.2 onnxruntime==1.20.1 opencv-python-headless==4.10.0.84 shapely==2.1.2 "numpy<2"
+    python tools/handwash_classifier/train_handwash.py \
+        --train tools/handwash_classifier/labels/handwash-correct.json tools/handwash_classifier/labels/handwash-wrong.json \
+        --out models/handwash_steps.onnx
 """
 
 import argparse
 import json
 import random
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -32,7 +39,15 @@ from PIL import Image
 from torch import nn
 from torchvision import models, transforms
 
-CLASSES = ["none", "other", "palms", "backs", "interlaced", "fingers", "thumbs", "fingertips"]
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "ai-worker"))
+from app.handpose import HandPose, hand_square, hands_box  # noqa: E402
+
+CLASSES = [
+    "none", "other", "palms", "backs_left", "backs_right", "interlaced", "fingers",
+    "thumbs_left", "thumbs_right", "fingertips_left", "fingertips_right",
+]
+# A frame flipped left to right shows the other hand doing the step.
+FLIPPED = [CLASSES.index(name.replace("_left", "_x").replace("_right", "_left").replace("_x", "_right")) for name in CLASSES]
 SIZE = 224
 STORED = 256
 MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
@@ -42,19 +57,7 @@ EDGE_S = 0.25
 EVERY = 2
 
 
-def sink_crop(frame: np.ndarray, crop: list[float], size: int) -> np.ndarray:
-    """The zone's bounding box, padded square on grey 127 and resized, as the worker feeds the model."""
-    height, width = frame.shape[:2]
-    x1, y1, x2, y2 = int(crop[0] * width), int(crop[1] * height), int(crop[2] * width), int(crop[3] * height)
-    region = frame[y1:y2, x1:x2]
-    side = max(region.shape[:2])
-    canvas = np.full((side, side, 3), 127, dtype=np.uint8)
-    top, left = (side - region.shape[0]) // 2, (side - region.shape[1]) // 2
-    canvas[top : top + region.shape[0], left : left + region.shape[1]] = region
-    return cv2.resize(canvas, (size, size), interpolation=cv2.INTER_AREA)
-
-
-def labelled_frames(label_file: Path, root: Path, keep_unsure: bool) -> tuple[list[np.ndarray], list[int], list[float]]:
+def labelled_frames(label_file: Path, root: Path, pose: HandPose, keep_unsure: bool) -> tuple[list[np.ndarray], list[int], list[float]]:
     spec = json.loads(label_file.read_text(encoding="utf-8"))
     spans = [(float(span[0]), float(span[1]), span[2], len(span) > 3 and span[3] == "unsure") for span in spec["segments"]]
     capture = cv2.VideoCapture(str(root / spec["video"]))
@@ -72,13 +75,21 @@ def labelled_frames(label_file: Path, root: Path, keep_unsure: bool) -> tuple[li
         span = next((span for span in spans if span[0] <= t <= span[1]), None)
         if span is None or (span[3] and not keep_unsure) or (min(t - span[0], span[1] - t) < EDGE_S and span[2] != "none"):
             continue
-        images.append(cv2.cvtColor(sink_crop(frame, spec["crop"], STORED), cv2.COLOR_BGR2RGB))
+        height, width = frame.shape[:2]
+        left, top = int(spec["crop"][0] * width), int(spec["crop"][1] * height)
+        square = hands_box(pose.palms(frame[top : int(spec["crop"][3] * height), left : int(spec["crop"][2] * width)]))
+        if square is None:
+            continue
+        square = [square[0] + left, square[1] + top, square[2] + left, square[3] + top]
+        images.append(cv2.cvtColor(hand_square(frame, square, STORED), cv2.COLOR_BGR2RGB))
         labels.append(CLASSES.index(span[2]))
         times.append(round(t, 2))
     return images, labels, times
 
 
 class Frames(torch.utils.data.Dataset):
+    """Training frames, half of them flipped left to right with the hand in the label swapped."""
+
     def __init__(self, images, labels, transform):
         self.images, self.labels, self.transform = images, labels, transform
 
@@ -86,7 +97,10 @@ class Frames(torch.utils.data.Dataset):
         return len(self.images)
 
     def __getitem__(self, index):
-        return self.transform(Image.fromarray(self.images[index])), self.labels[index]
+        image, label = Image.fromarray(self.images[index]), self.labels[index]
+        if random.random() < 0.5:
+            image, label = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT), FLIPPED[label]
+        return self.transform(image), label
 
 
 def evaluate(model, images, labels, transform) -> tuple[float, dict[str, str], Counter]:
@@ -115,26 +129,28 @@ def main() -> None:
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--epochs", type=int, default=12)
     parser.add_argument("--root", type=Path, default=Path("."))
+    parser.add_argument("--models", type=Path, default=Path("models"), help="where hand_palm.onnx and hand_pose.onnx are")
+    parser.add_argument("--unsure", action="store_true", help="train on spans marked unsure too")
     args = parser.parse_args()
     torch.manual_seed(7)
     random.seed(7)
     torch.set_num_threads(8)
+    pose = HandPose(str(args.models / "hand_palm.onnx"), str(args.models / "hand_pose.onnx"), ["CPUExecutionProvider"], 4)
 
     train_images, train_labels = [], []
     for label_file in args.train:
-        images, labels, _ = labelled_frames(label_file, args.root, keep_unsure=False)
+        images, labels, _ = labelled_frames(label_file, args.root, pose, keep_unsure=args.unsure)
         train_images += images
         train_labels += labels
         print(f"train {label_file.name}: {len(images)} frames {dict(Counter(CLASSES[label] for label in labels))}", flush=True)
     tests = []
     for label_file in args.test:
-        images, labels, _ = labelled_frames(label_file, args.root, keep_unsure=False)
+        images, labels, _ = labelled_frames(label_file, args.root, pose, keep_unsure=False)
         tests.append((label_file.name, images, labels))
         print(f"test {label_file.name}: {len(images)} frames", flush=True)
 
     train_tf = transforms.Compose([
         transforms.RandomResizedCrop(SIZE, scale=(0.75, 1.0), ratio=(0.9, 1.1)),
-        transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(10),
         transforms.ColorJitter(0.35, 0.35, 0.3, 0.03),
         transforms.ToTensor(),
@@ -179,7 +195,7 @@ def main() -> None:
     import onnx
 
     exported = onnx.load(str(args.out))
-    for key, value in {"classes": ",".join(CLASSES), "input": "zone bounding box padded square on grey 127, 224 px, RGB, ImageNet mean/std", "trained_on": ",".join(path.name for path in args.train)}.items():
+    for key, value in {"classes": ",".join(CLASSES), "crop": "hands", "input": "square round the palms (hands_box), grey 127 off the frame, 224 px, RGB, ImageNet mean/std", "trained_on": ",".join(path.name for path in args.train)}.items():
         entry = exported.metadata_props.add()
         entry.key, entry.value = key, value
     onnx.save(exported, str(args.out))

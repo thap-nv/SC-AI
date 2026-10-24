@@ -76,6 +76,8 @@ Mỗi món có ba trạng thái: Có, Không, Không xác định. Chỉ **Khôn
 
 Mỗi luật chạy riêng, nên một người thiếu hai món tạo hai incident. Người bị tracker mất dấu rồi bắt lại với số mới, cùng luật, gần chỗ cũ và trong thời gian cooldown thì vẫn dùng incident cũ. Muốn một khu chỉ bắt mũ thì tắt các luật còn lại ở trang **Rules**, hoặc vẽ thêm vùng và gắn luật cho vùng đó.
 
+Video MP4 tải lên được phát lặp như một camera. Mỗi lần video quay về đầu là một cảnh mới: incident đang mở được đóng, không nối sang lượt sau. Từ lượt phát thứ hai, mỗi luật báo tối đa một incident trong mỗi khoảng cooldown (tính từ lúc incident trước của luật đó kết thúc), để các lượt lặp không tạo incident trùng; luật rửa tay cũng vậy. Cooldown chỉnh ở trang **Rules**, worker áp dụng sau khoảng 1 giây; đặt 0 để tắt giới hạn. Lượt phát đầu và camera RTSP báo bình thường. Tắt camera cũng đóng các incident đang mở.
+
 Trên ảnh camera, mỗi người có một thẻ: số, rồi một chữ cho mỗi món được kiểm tra: **H** mũ, **C** đồ bảo hộ, **M** khẩu trang. Xanh là có, đỏ là thiếu, xám là chưa xác định. Khung đỏ là có vi phạm. Chú giải nằm ở góc dưới bên phải.
 
 Camera thứ hai, `CAM-RESTRICTED-01` (Restricted Area Camera 01), giám sát một khu vực hạn chế, ví dụ làn cân hay làn kiểm tra trong cảng:
@@ -85,7 +87,9 @@ Camera thứ hai, `CAM-RESTRICTED-01` (Restricted Area Camera 01), giám sát m�
 | No entry for people | Có người trong khu vực hạn chế | HIGH |
 | No entry for vehicles except forklifts | Có phương tiện trong khu vực hạn chế | HIGH |
 
-Không ai được vào. Ô tô, xe tải, xe buýt, xe máy không được vào; xe nâng được phép. Người ngồi trong xe, ví dụ tài xế xe nâng, không bị tính là người đi vào. Loại xe do CLIP xác định (`models/clip_vision.onnx` và `models/vehicle_types.npz`); thiếu hai file này thì xe nâng bị nhận là xe tải và bị báo. Vùng "Restricted lane" lúc tạo chỉ là vùng tạm ở giữa khung hình: upload video rồi vào **Draw zones**, bấm **Redraw** để vẽ đúng làn.
+Không ai được vào. Ô tô, xe tải, xe buýt, xe máy không được vào; xe nâng được phép. Người ngồi trong xe, ví dụ tài xế xe nâng, không bị tính là người đi vào. Model người (COCO) không có lớp xe nâng, nên xe nâng do `models/forklift.onnx` tìm (YOLOv8n học trên ảnh xe nâng, giấy phép AGPL-3.0, xem `models/README.md`); thiếu file này thì xe nâng chỉ hiện khi model người tình cờ thấy nó là xe tải. Loại xe do CLIP xác định (`models/clip_vision.onnx` và `models/vehicle_types.npz`); thiếu hai file này thì lấy loại của detector, và xe nâng mà model người nhận là xe tải sẽ bị báo. Vùng "Restricted lane" lúc tạo chỉ là vùng tạm ở giữa khung hình: upload video rồi vào **Draw zones**, bấm **Redraw** để vẽ đúng làn. Người được tính là trong vùng theo điểm giữa đáy khung (chỗ bàn chân): người đứng ngay trên vạch mép vùng có thể nằm ngoài vài pixel, nên vẽ vùng ra ngoài vạch nếu vạch cũng thuộc khu cấm.
+
+Trên video cảng `sample-data/videos/retricted area 2.mp4`, camera theo được xe nâng gần suốt đường đi và ghi là được phép, ô tô bị báo suốt, người đứng xa trong làn bị báo. Trước đây, khi model người còn chạy trên nguyên khung hình và chưa có `forklift.onnx`, xe nâng chỉ có khung trong 0,8 giây cuối và người đứng xa không bao giờ được thấy. Camera này chạy khoảng 9 FPS trên máy thử, vì mỗi frame chạy cả model người lẫn model xe nâng.
 
 Camera thứ ba, `CAM-HANDWASH-01` (Handwash Station Camera 01), đặt phía trên bồn rửa, nhìn thẳng xuống, kiểm tra quy trình rửa tay thường quy 6 bước của Bộ Y tế (cùng thứ tự với WHO):
 
@@ -98,10 +102,10 @@ Camera thứ ba, `CAM-HANDWASH-01` (Handwash Station Camera 01), đặt phía tr
 | 5 | Xoay ngón cái trong lòng bàn tay kia | Có | Có |
 | 6 | Xoay các đầu ngón tay trong lòng bàn tay kia | Có | Có, nhưng gần như luôn tính là có |
 
-- Vùng **Sink**, loại **Hand-wash station**: vẽ quanh bồn rửa, chỗ tay rửa. Model của site nhìn đúng hình chữ nhật bao vùng này, nên phải vẽ giống lúc huấn luyện: trên camera hiện tại là từ 22% đến 82% bề ngang, hết chiều cao khung hình.
-- Luật **WHO 6-step hand washing** (incident "Hand wash incomplete", mức MEDIUM). Mỗi lần rửa được chấm một lần, khi tay rời bồn quá 2,5 giây (`HANDWASH_GAP_S`) hoặc khi video upload chạy lại từ đầu. Bước nào làm chưa đủ 3 giây (ô "Min per step" ở trang **Rules**) là thiếu, và tạo một incident cho cả lần rửa. Ảnh incident ghi các bước bị thiếu. Tay xuất hiện dưới 3 giây thì không tính là một lần rửa.
-- **Model của site** `models/handwash_steps.onnx` (có file này thì worker dùng nó): MobileNetV3-Small phân loại vùng bồn rửa thành không có tay, có tay nhưng không phải bước nào (làm ướt, lấy xà phòng, xả nước), hoặc một trong 6 bước. Huấn luyện bằng `tools/handwash_classifier/train_handwash.py` trên hai clip mẫu, lấy clip đúng làm chuẩn. Nhãn từng đoạn thời gian nằm trong `tools/handwash_classifier/labels/`, sửa được rồi huấn luyện lại.
-- Huấn luyện chỉ trên clip đúng rồi thử trên clip sai (model chưa thấy clip này): đúng 87,5% khung hình. Trên camera, clip đúng qua cả 3 lần chạy; clip sai bị tách đúng thành hai lần rửa, cả hai bị báo thiếu bước ở cả 3 lần chạy. Mới chỉ có hai clip của một người ở một bồn, nên người khác, áo khác, ánh sáng khác cần thêm clip để huấn luyện.
+- Vùng **Sink**, loại **Hand-wash station**: vẽ quanh bồn rửa, chỗ tay rửa. Model của site tìm bàn tay trong vùng này (bằng `models/hand_palm.onnx`) rồi nhìn một khung vuông quanh hai bàn tay, nên vẽ vùng rộng hay hẹp hơn một chút không làm đổi kết quả.
+- Luật **WHO 6-step hand washing** (incident "Hand wash incomplete", mức MEDIUM). Mỗi lần rửa được chấm một lần, khi tay rời bồn quá 1,5 giây (`HANDWASH_GAP_S`) hoặc khi video upload chạy lại từ đầu. Bước nào được tính chưa đủ 1,5 giây (ô "Min per step" ở trang **Rules**) là thiếu, và tạo một incident cho cả lần rửa. Ảnh incident ghi các bước bị thiếu. Tay xuất hiện dưới 3 giây thì không tính là một lần rửa.
+- **Model của site** `models/handwash_steps.onnx` (có file này thì worker dùng nó, cần thêm `hand_palm.onnx` và `hand_pose.onnx`): MobileNetV3-Small phân loại khung quanh hai bàn tay thành không có tay, có tay nhưng không phải bước nào (làm ướt, lấy xà phòng, xả nước), hoặc một trong 6 bước. Bước 2, 5, 6 phải làm cho từng tay nên được nhận riêng tay trái và tay phải (tay được làm sạch: mu tay nào, ngón cái nào, đầu ngón của tay nào). Mỗi tay cần ít nhất một nửa thời gian tối thiểu (0,75 giây). Thiếu một tay thì bước đó bị báo thiếu cho tay đó, ví dụ "5 Thumbs: right hand only". Mỗi lần đọc cho xác suất của từng bước, và mỗi bước được cộng thời gian theo xác suất đó, nên cùng một video chạy lại cho cùng kết quả. Huấn luyện bằng `tools/handwash_classifier/train_handwash.py` trên hai clip mẫu. Nhãn từng đoạn thời gian nằm trong `tools/handwash_classifier/labels/`, sửa được rồi huấn luyện lại.
+- Trên vòng lặp camera thật, chạy video ghép 4 lần với vùng vẽ hẹp (22–82% bề ngang) và vùng vẽ rộng (6–92%), lần nào cũng ra cùng kết quả, khớp với lời người rửa: lần rửa đúng qua, lần rửa sai thứ nhất thiếu bước 3 và bước 5 tay trái (chỉ xoay ngón cái phải), lần rửa sai thứ hai thiếu bước 4. Mới chỉ có hai clip của một người ở một bồn, nên người khác, áo khác, ánh sáng khác cần thêm clip để huấn luyện. Chi tiết và số đo xem `models/README.md`.
 - **Model tham khảo** `models/handwash.onnx` (YOLOv8n-seg của repo `synthetic-hand-washing`, chỉ học trên ảnh dựng 3D) chỉ dùng khi không có model của site. Với model này đặt `HANDWASH_SKIP_STEPS=fingers`. `HANDWASH_SCALE` (mặc định 0.6) thu nhỏ khung hình cho camera gần bồn. Chi tiết và giấy phép (trọng số Ultralytics là AGPL-3.0) xem `models/README.md`.
 - Video upload chạy đúng tốc độ thật như camera thật.
 
@@ -150,7 +154,7 @@ Mặc định chạy CPU. Dashboard không cần GPU.
 
 Mỗi camera chạy model với `AI_THREADS` luồng, mặc định 2, và các luồng nghỉ giữa hai frame. Trên máy 22 luồng CPU, 4 camera đạt khoảng 27 FPS mỗi camera và dùng khoảng 4.5 lõi. Một camera trên máy nhiều lõi có thể tăng `AI_THREADS`; nhiều camera thì giữ thấp. Worker đọc cấu hình camera mỗi giây và gửi trạng thái lên backend hai lần mỗi giây, không theo từng frame.
 
-`AI_MODE=REAL` dùng YOLOX-Nano khi có `models/person.onnx`, nhận diện toàn thân mà không yêu cầu thấy mặt. Cách tải model chính thức và checksum nằm ở [models/README.md](models/README.md). Không có model thì dùng OpenCV HOG. Khi chưa có `ppe.onnx`, worker đọc màu trên từng người, chỉ phù hợp kiểm thử POC với video rõ, chưa phù hợp triển khai thật:
+`AI_MODE=REAL` dùng YOLOX-Nano khi có `models/person.onnx`, nhận diện toàn thân mà không yêu cầu thấy mặt. Khung 16:9 được chia thành hai ô vuông chồng lên nhau rồi mới đưa vào model, nên người ở xa hiện to gấp 1,8 lần: trên video cảng, người đứng xa cao 65 px được thấy đủ chắc để theo dõi ở 44/49 frame thay vì 2/49. Đổi lại model người chạy khoảng 36 ms một frame thay vì 18 ms. Cách tải model chính thức và checksum nằm ở [models/README.md](models/README.md). Không có model thì dùng OpenCV HOG. Khi chưa có `ppe.onnx`, worker đọc màu trên từng người, chỉ phù hợp kiểm thử POC với video rõ, chưa phù hợp triển khai thật:
 
 - **Mũ:** mũ cứng trắng, vàng, cam hoặc đỏ ngay trên mặt là có; tóc hoặc da đầu là không.
 - **Đồ bảo hộ:** áo liền quần, nghĩa là thân và chân cùng màu đồ lao động (xám, be, trắng, xanh). Áo màu sặc sỡ, hoặc áo màu đồ lao động với quần tối, là không. Không thấy chân thì để Không xác định.
@@ -165,7 +169,7 @@ Video quay demo nên thấy trọn người từ mũ đến chân, người khô
 | File | Hợp đồng |
 |---|---|
 | `person.onnx` | YOLOX-Nano chính thức: đầu vào 1x3x416x416 BGR 0..255, đầu ra raw 1x3549x85; class COCO 0 là người. |
-| `forklift.onnx` | Ra tensor Nx6: x1, y1, x2, y2, score, class trong tọa độ ảnh đầu vào model. Class 1 là forklift. |
+| `forklift.onnx` | Detector xe nâng YOLOv8, export bằng `tools/forklift_yolo/export_forklift_onnx.py`: đầu vào RGB 0..1 (POC dùng 1x3x512x896), đầu ra YOLO `(1, 4 + lớp, anchors)`, tên lớp đọc từ file, chỉ giữ lớp `forklift`. Chỉ chạy trên camera có luật người hoặc xe trong vùng. |
 | `face.onnx` | YuNet 2023mar của OpenCV Zoo, MIT. Tìm mặt trong vùng đầu của từng người để kiểm tra khẩu trang và mũ. |
 | `mask.onnx` | MobileNetV3-Small phân loại khuôn mặt: đeo sai cách, đeo đúng, không đeo. Train bằng `tools/mask_classifier/train_mask.py`; nguồn dữ liệu và giấy phép ở [models/README.md](models/README.md). |
 | `ppe.onnx` | Detector đồ bảo hộ, chạy trên ảnh cắt của từng người. Tám lớp: 0 helmet, 1 no_helmet, 2 clothing, 3 no_clothing, 4 shoes, 5 no_shoes, 6 mask, 7 no_mask. Chấp nhận tensor Nx6 hoặc đầu YOLO `(1, 12, anchors)`. Mỗi món lấy box mạnh nhất nằm đúng phần cơ thể: mũ ở đầu, khẩu trang ở mặt, áo ở thân, giày ở chân. Cách train và export ở [models/README.md](models/README.md) và `tools/ppe_yolo`. |
@@ -184,7 +188,7 @@ Image mặc định vẫn là CPU. Muốn inference CUDA thì cài `onnxruntime-
 - Theo dõi người: ByteTrack qua thư viện supervision, Apache-2.0.
 - ONNX Runtime: MIT.
 
-Không dùng Ultralytics YOLO vì giấy phép AGPL.
+Detector người dùng YOLOX (Apache-2.0), không dùng Ultralytics YOLO vì giấy phép AGPL. Hai model tùy chọn là ngoại lệ, đều là trọng số Ultralytics YOLOv8 nên theo AGPL-3.0: `handwash.onnx` và `forklift.onnx`. Cần xem lại trước khi bán sản phẩm; chi tiết ở [models/README.md](models/README.md).
 
 ## Theo dõi
 

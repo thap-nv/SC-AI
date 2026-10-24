@@ -140,7 +140,7 @@ def test_worker_token_and_masking():
         assert {rule["condition_type"] for rule in workshop["rules"]} == {"HELMET_MISSING", "CLOTHING_MISSING", "MASK_MISSING"}
         sink = next(item for item in allowed.json() if item["code"] == "CAM-HANDWASH-01")
         assert [zone["zone_type"] for zone in sink["zones"]] == ["HANDWASH_STATION"]
-        assert [(rule["condition_type"], rule["min_duration_ms"]) for rule in sink["rules"]] == [("HANDWASH_STEPS_MISSING", 3000)]
+        assert [(rule["condition_type"], rule["min_duration_ms"]) for rule in sink["rules"]] == [("HANDWASH_STEPS_MISSING", 1500)]
     assert mask_stream_url("rtsp://operator:s3cret@10.0.0.5/live") == "rtsp://operator:***@10.0.0.5/live"
     assert "s3cret" not in mask_stream_url("rtsp://operator:s3cret@10.0.0.5/live")
 

@@ -1,17 +1,19 @@
 {
   "video": "sample-data/videos/handwash - correct.mp4",
-  "note": "The reference wash: the six Bo Y te / WHO steps in order. Labelled by eye from frames every 0.5 s. Changes between steps are left out.",
+  "note": "The reference wash: the six Bo Y te / WHO steps in order, steps 2, 5 and 6 with each hand. Labelled by eye from frames every 0.5 s; the hands were confirmed by the person who washed. Changes between steps and hands are left out.",
   "crop": [0.22, 0.0, 0.82, 1.0],
   "segments": [
     [0.0, 0.3, "none"],
     [0.5, 6.0, "other"],
     [6.5, 12.0, "palms"],
-    [12.5, 16.8, "backs"],
-    [18.0, 21.5, "backs"],
+    [12.5, 16.5, "backs_right"],
+    [18.0, 21.5, "backs_left"],
     [22.0, 27.0, "interlaced"],
     [28.0, 32.5, "fingers"],
-    [34.0, 40.0, "thumbs"],
-    [41.0, 48.5, "fingertips"],
+    [34.0, 36.0, "thumbs_right"],
+    [36.5, 40.0, "thumbs_left"],
+    [41.5, 46.5, "fingertips_left"],
+    [47.0, 48.5, "fingertips_right"],
     [49.0, 64.5, "other"]
   ]
 }

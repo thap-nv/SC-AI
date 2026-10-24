@@ -30,6 +30,7 @@ class FakeApi:
         self.config_calls = 0
         self.heartbeats: list[str] = []
         self.acks = 0
+        self.closed: list[str] = []
 
     def list_cameras(self) -> list[dict]:
         self.config_calls += 1
@@ -40,6 +41,9 @@ class FakeApi:
 
     def ack_simulate(self, camera_id: str) -> None:
         self.acks += 1
+
+    def close_incident(self, incident_id: str, ended_at: str) -> None:
+        self.closed.append(incident_id)
 
 
 def loop_with(cameras: list[dict]) -> tuple[CameraLoop, FakeApi]:
@@ -113,12 +117,113 @@ def test_a_person_found_again_under_a_new_id_keeps_the_incident():
     assert not loop._carry_on(CAMERA, opening("13", (0.43, 0.31, 0.51, 0.71)), 30.0, 140.0, {"13"}), "past the cooldown"
 
 
+PEOPLE_RULE = {"id": "people", "zone_id": "z1", "condition_type": "PERSON_INSIDE", "event_type": "RESTRICTED_AREA_INTRUSION", "severity": "HIGH", "min_duration_ms": 0, "cooldown_ms": 30000, "grace_ms": 1000, "enabled": True}
+
+
+def with_open_incident(loop: CameraLoop) -> None:
+    """Person 5 in the zone with incident inc-1 open, as a clip ends."""
+    from app.rule_engine import Observation
+    from app.runtime import rule_config
+
+    seen = Observation(track_id="5", timestamp=100.0, inside=True, confidence=0.9, bbox=(0.40, 0.30, 0.48, 0.70))
+    assert [action.kind for action in loop.engine.update(rule_config(PEOPLE_RULE), seen)] == ["open"]
+    loop.engine.attach_incident("people", "5", "inc-1")
+    loop._remember("people", "inc-1", "5", seen.bbox, 100.0)
+
+
+def test_a_looping_video_starting_over_ends_its_incidents_so_the_next_play_alerts_again():
+    from app.rule_engine import Observation
+    from app.runtime import rule_config
+
+    camera = {**CAMERA, "rules": [PEOPLE_RULE]}
+    loop, api = loop_with([camera])
+    with_open_incident(loop)
+    loop.source.rewound = True
+    loop._step(camera)
+    assert api.closed == ["inc-1"]
+    assert loop.recent_incidents == {}
+    # Someone at the same spot as the clip starts again opens a new incident instead of carrying on inc-1.
+    now = 200.0
+    opening = loop.engine.update(rule_config(PEOPLE_RULE), Observation(track_id="9", timestamp=now, inside=True, confidence=0.9, bbox=(0.41, 0.30, 0.49, 0.70)))
+    assert [action.kind for action in opening] == ["open"]
+    assert not loop._carry_on(camera, opening[0], 30.0, now, {"9"})
+
+
+def test_a_looping_video_alerts_once_per_rule_per_cooldown(monkeypatch):
+    import app.runtime
+
+    monkeypatch.setattr(app.runtime, "annotate", lambda frame, zones, tracks, **kwargs: frame)
+    zone = {"id": "z1", "name": "Lane", "zone_type": "RESTRICTED_AREA", "polygon": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]}
+    camera = {**CAMERA, "stream_url": "videos/cam-1/clip.mp4", "zones": [zone], "rules": [PEOPLE_RULE]}
+    loop, _ = loop_with([camera])
+    opened = []
+
+    def open_incident(camera_, frame, action, annotated_frame):
+        opened.append(action.track_id)
+        loop.engine.attach_incident(action.rule_id, action.track_id, f"inc-{action.track_id}")
+
+    loop._open = open_incident
+    frame = np.zeros((540, 960, 3), dtype=np.uint8)
+
+    def person(track_id: str, box=(0.40, 0.30, 0.48, 0.70)) -> dict:
+        return {"track_id": track_id, "class_name": "person", "confidence": 0.9, "bbox_norm": box, "ppe": {}, "ppe_scores": {}}
+
+    loop._apply_rules(camera, frame, [person("1")], 100.0)
+    loop._apply_rules(camera, frame, [person("1"), person("2")], 100.5)
+    assert opened == ["1", "2"], "the first play alerts for everyone"
+    loop._end_scene(camera, 101.0)
+    loop.looped_url = camera["stream_url"]
+    loop._apply_rules(camera, frame, [person("3")], 111.0)
+    loop._apply_rules(camera, frame, [person("3")], 125.0)
+    assert opened == ["1", "2"], "later plays repeat it: nothing until 30 s after the last incident ended at 100.5"
+    loop._apply_rules(camera, frame, [person("3")], 131.0)
+    assert opened == ["1", "2", "3"]
+    loop._apply_rules(camera, frame, [person("4")], 140.0)
+    assert opened == ["1", "2", "3"], "inc-3 closes on this frame at 131: the cooldown runs from there"
+    assert loop._quiet_until(camera, "people", 30.0, 140.0) == 161.0
+    assert loop._quiet_until(camera, "people", 0.0, 140.0) is None, "a cooldown of 0 turns the limit off"
+    loop.looped_url = None
+    # Away from where person 3 was lost, so not carried on as the same person.
+    loop._apply_rules(camera, frame, [person("5", (0.80, 0.30, 0.88, 0.70))], 141.0)
+    assert opened == ["1", "2", "3", "5"], "a camera that is not replaying a video alerts as before"
+
+
+def test_turning_a_camera_off_ends_its_incidents():
+    camera = {**CAMERA, "enabled": False, "rules": [PEOPLE_RULE]}
+    loop, api = loop_with([camera])
+    with_open_incident(loop)
+    api.heartbeat = lambda camera_id, payload: loop.stop.set()
+    loop.run()
+    assert api.closed == ["inc-1"]
+    assert loop.recent_incidents == {}
+
+
 @pytest.mark.skipif(not (Path("/models") / "person.onnx").exists(), reason="person.onnx is not installed")
 def test_onnx_sessions_use_a_few_threads_that_do_not_spin():
     detector, *_ = build_detectors("REAL", "/models", "cpu", threads=2)
     options = detector.session.get_session_options()
     assert options.intra_op_num_threads == 2
     assert options.get_session_config_entry("session.intra_op.allow_spinning") == "0"
+
+
+def test_forklifts_are_looked_for_only_on_cameras_with_a_person_or_vehicle_zone_rule():
+    def rule(condition: str) -> dict:
+        return {"id": condition, "zone_id": "z1", "condition_type": condition, "event_type": "E", "severity": "HIGH", "min_duration_ms": 1000, "cooldown_ms": 30000, "grace_ms": 1000, "enabled": True}
+
+    class StubForklifts:
+        calls = 0
+
+        def detect(self, frame):
+            self.calls += 1
+            return []
+
+    loop, _ = loop_with([CAMERA])
+    loop._step({**CAMERA, "rules": [rule("HELMET_MISSING")]})
+    assert loop.forklifts is None
+    loop.forklifts = StubForklifts()
+    loop._step({**CAMERA, "rules": [rule("HELMET_MISSING"), rule("PERSON_INSIDE")]})
+    loop._step({**CAMERA, "rules": [rule("VEHICLE_INSIDE")]})
+    assert loop.forklifts.calls == 2
 
 
 def test_a_forklift_driver_is_exempt_and_a_car_is_flagged_in_a_restricted_area():

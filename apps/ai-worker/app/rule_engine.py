@@ -111,6 +111,20 @@ class RuleEngine:
             actions.extend(self._abandon(rule, key, state, now))
         return actions
 
+    def end_all(self, rules: dict[str, RuleConfig], now: float) -> list[Action]:
+        """Ends every pending and open state at once, as if everyone left: the scene broke."""
+        actions: list[Action] = []
+        for key, state in list(self._states.items()):
+            rule = rules.get(key[0])
+            if rule is None or state.phase not in {"pending", "open"}:
+                continue
+            actions.extend(self._abandon(rule, key, state, now))
+        return actions
+
+    def has_open(self, rule_id: str) -> bool:
+        """Whether the rule has an incident open now, for any track."""
+        return any(key[0] == rule_id and state.phase == "open" and state.incident_id for key, state in self._states.items())
+
     def attach_incident(self, rule_id: str, track_id: str, incident_id: str) -> None:
         state = self._states.get((rule_id, track_id))
         if state is not None:
