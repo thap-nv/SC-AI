@@ -5,22 +5,25 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
 # or set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in .env and run plain docker compose.
+#
+# On a server shared with other sites, move any host port that is already taken by setting it in .env,
+# e.g. FRONTEND_PORT=3100, and point the nginx upstream at the same port.
 
 services:
   backend:
     ports: !override
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
 
   frontend:
     ports: !override
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
 
   ai-worker:
     ports: !override
-      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:${WORKER_PORT:-8081}:8081"
 
-  # Reach the console through an SSH tunnel: ssh -L 9101:127.0.0.1:9101 user@server
+  # Reach the console through an SSH tunnel: ssh -L 9101:127.0.0.1:9101 user@server (or the MINIO_CONSOLE_PORT set in .env)
   minio:
     ports: !override
-      - "127.0.0.1:9100:9000"
-      - "127.0.0.1:9101:9001"
+      - "127.0.0.1:${MINIO_API_PORT:-9100}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9101}:9001"

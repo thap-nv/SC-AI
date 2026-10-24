@@ -140,6 +140,8 @@ Mỗi vùng lưu khung hình đã dùng để vẽ. Khoảng mỗi giây, worker
 
 Tạm dừng hay bật lại cần hai lần so liên tiếp cùng kết quả.
 
+Không muốn vùng theo camera thì tắt **Follow camera moves** trong form vẽ trước khi lưu, hoặc bấm **Unlink** ở vùng đã lưu. Vùng không gắn thì nằm cố định đúng chỗ đã vẽ, không bao giờ tạm dừng, và luôn được kiểm tra, kể cả trên camera nhiều góc. Hợp với camera cố định, hoặc video đổi cảnh giữa chừng (vùng gắn sẽ tạm dừng ở những đoạn không khớp). **Redraw** giữ lựa chọn hiện tại của vùng.
+
 Camera xoay giữa nhiều góc (PTZ preset) thì bật **Camera has several views** trong Camera settings. Mặc định tắt. Các vùng khóa cùng một khung hình là một góc nhìn: mở Draw zones khi camera đang ở góc đó, vẽ hoặc bấm **Lock to this view** cho từng vùng của góc đó. Worker chỉ dùng góc nhìn khớp nhất với khung hình hiện tại; vùng của góc khác bị ẩn và không chạy luật. Đổi góc cần góc mới khớp hơn ít nhất 25% trong hai lần so liên tiếp. Không bật cho camera cố định: hai vùng vẽ vào hai ngày khác nhau sẽ thành hai góc nhìn và ẩn lẫn nhau. Trang camera có mục **Zones** ghi trạng thái từng vùng. Vùng vẽ trước khi có chức năng này giữ nguyên vị trí; bấm **Lock to this view** trong Draw zones nếu vùng đang khớp với khung hình.
 
 ## CPU và GPU
