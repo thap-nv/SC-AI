@@ -15,9 +15,9 @@ type Check = { item?: string; text: string; state: "violation" | "ok" | "unknown
 
 const ITEM_NAMES: Record<string, string> = { helmet: "Helmet", clothing: "Clothing", shoes: "Shoes", mask: "Mask" };
 const CHECK_CHIPS: Record<Check["state"], { mark: string; style: string }> = {
-  violation: { mark: "✗", style: "bg-danger-500/25 text-danger-200" },
-  ok: { mark: "✓", style: "bg-success-600/20 text-success-200" },
-  unknown: { mark: "?", style: "bg-ink-edge text-fog-300" },
+  violation: { mark: "✗", style: "bg-[#5A1E17] text-[#F4B7AC]" },
+  ok: { mark: "✓", style: "bg-[#2E4A35] text-[#B9DDBF]" },
+  unknown: { mark: "?", style: "bg-ink-edge text-husk-300" },
 };
 
 type ZoneState = { id: string; name: string; state: string; shift_pct: number };
@@ -54,10 +54,10 @@ type Live = {
 // How a tracked person or vehicle reads in the "In view" card.
 function verdict(track: Track) {
   const checks = track.checks || [];
-  if (checks.some((check) => check.state === "violation")) return { chip: "Violation", box: "border-danger-500", style: "bg-danger-500/20 text-danger-200" };
+  if (checks.some((check) => check.state === "violation")) return { chip: "Violation", box: "border-[#C8372A]", style: "bg-[#5A1E17] text-[#F4B7AC]" };
   const hands = track.class_name === "hands";
-  if (checks.length && checks.every((check) => check.state === "ok")) return { chip: hands ? "All steps done" : track.class_name === "person" ? "Compliant" : "Allowed", box: "border-success-600", style: "bg-success-600/20 text-success-200" };
-  return { chip: hands ? "Washing" : "Not checked", box: "border-fog-500", style: "bg-ink-edge text-fog-300" };
+  if (checks.length && checks.every((check) => check.state === "ok")) return { chip: hands ? "All steps done" : track.class_name === "person" ? "Compliant" : "Allowed", box: "border-leaf-600", style: "bg-[#2E4A35] text-[#B9DDBF]" };
+  return { chip: hands ? "Washing" : "Not checked", box: "border-gold-500", style: "bg-ink-edge text-husk-300" };
 }
 
 function trackName(track: Track) {
@@ -247,20 +247,20 @@ export default function CameraDetailPage() {
         camera ? (
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {/* An admin turns the camera on and off right on its status, where the result shows; others see the status alone.
-                Off is orange: a safety camera that watches nothing should catch the eye. */}
+                Off is amber: a safety camera that watches nothing should catch the eye. */}
             {admin ? (
-              <span className={`inline-flex items-center gap-2 rounded-full py-px pl-px pr-3 text-xs font-semibold ${!camera.enabled ? "bg-warn-50 text-warn-700" : isLive ? "bg-success-50 text-success-700" : "bg-well text-graphite-500"}`}>
+              <span className={`inline-flex items-center gap-2 rounded-full py-px pl-px pr-3 text-xs font-semibold ${!camera.enabled ? "bg-[#F6E8CD] text-[#7A4F0B]" : isLive ? "bg-leaf-50 text-leaf-700" : "bg-well text-husk-700"}`}>
                 <Switch checked={camera.enabled} onChange={setEnabled} label={camera.enabled ? "Disable camera" : "Enable camera"} size="sm" disabled={toggling} />
                 {camera.enabled ? (isLive ? "Camera on · Live" : "Camera on · Offline") : "Camera off"}
               </span>
             ) : (
-              <span className={`inline-flex items-center gap-[7px] rounded-full px-2.5 py-1 text-xs font-semibold ${isLive ? "bg-success-50 text-success-700" : "bg-well text-graphite-500"}`}>
+              <span className={`inline-flex items-center gap-[7px] rounded-full px-2.5 py-1 text-xs font-semibold ${isLive ? "bg-leaf-50 text-leaf-700" : "bg-well text-husk-700"}`}>
                 <span className="h-[7px] w-[7px] rounded-full bg-current" />
                 {camera.enabled ? (isLive ? "Live" : "Offline") : "Disabled"}
               </span>
             )}
             {/* Each fact stays whole when the line wraps on a phone. */}
-            <span className="flex flex-wrap gap-x-1.5 font-mono text-[12.5px] text-graphite-500">
+            <span className="flex flex-wrap gap-x-1.5 font-mono text-[12.5px] text-bark-500">
               {[camera.code, camera.area, `${ruleCount} ${ruleCount === 1 ? "rule" : "rules"}`].map((fact, index) => (
                 <span key={index} className="whitespace-nowrap">{index ? "· " : ""}{fact}</span>
               ))}
@@ -302,17 +302,17 @@ export default function CameraDetailPage() {
             <dl className="grid flex-1 basis-full grid-cols-2 items-baseline gap-x-4 gap-y-1 sm:flex sm:basis-0 sm:flex-wrap">
               {stats.map(([label, value, hint]) => (
                 <div key={label} title={hint} className="flex items-baseline gap-1.5 whitespace-nowrap">
-                  <dt className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-graphite-400">{label}</dt>
-                  <dd className="font-mono text-[13px] font-medium text-graphite-800">{value}</dd>
+                  <dt className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-bark-400">{label}</dt>
+                  <dd className="font-mono text-[13px] font-medium text-bark-800">{value}</dd>
                 </div>
               ))}
             </dl>
-            <span className="ml-auto flex items-center gap-2.5 whitespace-nowrap text-[13px] font-medium text-graphite-600">
+            <span className="ml-auto flex items-center gap-2.5 whitespace-nowrap text-[13px] font-medium text-bark-600">
               AI overlay
-              <Switch checked={overlay} onChange={setOverlay} label="Show AI overlay" size="sm" tone="brand" />
+              <Switch checked={overlay} onChange={setOverlay} label="Show AI overlay" size="sm" tone="gold" />
             </span>
             {canFullscreen ? (
-              <button type="button" onClick={() => stage.current?.requestFullscreen().catch(() => undefined)} aria-label="Full screen" title="Full screen" className="grid h-8 w-8 place-items-center border border-line bg-surface p-0 text-graphite-600 hover:bg-muted">
+              <button type="button" onClick={() => stage.current?.requestFullscreen().catch(() => undefined)} aria-label="Full screen" title="Full screen" className="grid h-8 w-8 place-items-center border border-line bg-surface p-0 text-bark-600 hover:bg-paper">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
                   <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
                 </svg>
@@ -324,25 +324,25 @@ export default function CameraDetailPage() {
             {frame ? (
               <img src={frame} alt="Latest camera frame" className={`absolute inset-0 h-full w-full object-contain transition-[filter] duration-300 ${camera?.enabled === false ? "brightness-[.72] grayscale-[.6]" : ""}`} />
             ) : (
-              <div className="absolute inset-0 grid place-items-center bg-stripes font-mono text-xs text-fog-500">waiting for the first frame · {camera?.code}</div>
+              <div className="absolute inset-0 grid place-items-center bg-stripes font-mono text-xs text-husk-500">waiting for the first frame · {camera?.code}</div>
             )}
             {isLive && overlay && frame ? (
-              <span className="pointer-events-none absolute inset-x-0 hidden h-0.5 bg-gradient-to-r from-transparent via-brand-400/90 to-transparent shadow-[0_0_12px_rgba(72,198,253,.55)] motion-safe:block motion-safe:animate-scan" aria-hidden="true" />
+              <span className="pointer-events-none absolute inset-x-0 hidden h-0.5 bg-gradient-to-r from-transparent via-gold-300/85 to-transparent shadow-[0_0_12px_rgba(227,190,116,.6)] motion-safe:block motion-safe:animate-scan" aria-hidden="true" />
             ) : null}
             {pausedZones.length ? (
-              <div className="absolute inset-x-3 top-3 rounded-lg bg-danger-600/95 px-3 py-2 text-[13px] text-white shadow-[0_6px_20px_rgba(10,21,37,.3)]">
+              <div className="absolute inset-x-3 top-3 rounded-lg bg-crimson-600/95 px-3 py-2 text-[13px] text-[#FFF3EE] shadow-[0_6px_20px_rgba(23,17,12,.3)]">
                 {pausedZones.map((zone) => zone.name).join(", ")} {pausedZones.length === 1 ? "is" : "are"} paused because the camera no longer shows {pausedZones.length === 1 ? "it" : "them"}. Rules there resume when the view matches again, or <Link href={`/cameras/${params.id}/zones`} className="font-semibold underline">redraw</Link> for the new view.
               </div>
             ) : null}
-            <span className="absolute bottom-3 left-3 flex items-center gap-2 rounded bg-ink/80 px-2.5 py-[5px] font-mono text-[11px] text-fog-100">
+            <span className="absolute bottom-3 left-3 flex items-center gap-2 rounded bg-ink/80 px-2.5 py-[5px] font-mono text-[11px] text-husk-100">
               {isLive ? <RecDot /> : null}
               <span>{camera?.code}</span>
-              <span className="h-1 w-1 rounded-full bg-brand-400" aria-hidden="true" />
+              <span className="text-gold-500" aria-hidden="true">◆</span>
               <span>{clock}</span>
             </span>
             {camera?.enabled === false ? (
               <div className="pointer-events-none absolute inset-0 grid place-items-center">
-                <span className="rounded-lg border border-white/15 bg-ink/85 px-4 py-2.5 text-[13px] font-medium text-white">Camera disabled · showing last frame</span>
+                <span className="rounded-lg border border-gold-500/40 bg-ink/85 px-4 py-2.5 text-[13px] font-medium text-gold-200">Camera disabled · showing last frame</span>
               </div>
             ) : null}
           </div>
@@ -351,22 +351,23 @@ export default function CameraDetailPage() {
         <div className="relative min-w-0 xl:min-h-[420px]">
           <div className="flex flex-col gap-4 xl:absolute xl:inset-0 xl:overflow-y-auto">
             <section className="panel-dark flex shrink-0 flex-col gap-3 p-4 xl:min-h-[200px] xl:flex-1 xl:shrink">
+              <div className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-rays-soft" aria-hidden="true" />
               <div className="relative flex items-baseline gap-2.5">
-                <h2 className="flex-1 text-[15px] font-semibold text-fog-50">People and vehicles</h2>
-                <span className="font-display text-2xl font-bold leading-none text-white">{tracks.length}</span>
+                <h2 className="flex-1 text-[15px] font-semibold text-husk-50">People and vehicles</h2>
+                <span className="font-display text-2xl font-semibold leading-none text-gold-300">{tracks.length}</span>
               </div>
               {/* Stacked, a fixed cap that scrolls; in the side column it takes whatever height is left, so people coming and going never move the panels below. */}
               <div className="relative -mr-2 flex max-h-[300px] flex-col gap-2 overflow-y-auto pr-2 [scrollbar-gutter:stable] xl:max-h-none xl:min-h-0 xl:flex-1">
-                {tracks.length === 0 ? <p className="text-[13.5px] text-fog-300">No person detected on the latest frame.</p> : null}
+                {tracks.length === 0 ? <p className="text-[13.5px] text-husk-300">No person detected on the latest frame.</p> : null}
                 {ordered.map((track) => {
                   const view = verdict(track);
                   const checks = track.checks || [];
                   return (
                     <div key={track.track_id + track.class_name} className="shrink-0 rounded-lg border border-ink-edge bg-ink-raised px-3 py-2.5">
                       <div className="flex items-center gap-2.5">
-                        <span className={`grid h-6 min-w-[30px] shrink-0 place-items-center rounded border-2 px-1 font-mono text-[11px] text-fog-100 ${view?.box || "border-fog-500"}`}>{track.track_id}</span>
-                        <span className="truncate text-sm font-semibold text-fog-50">{trackName(track)}</span>
-                        <span className="font-mono text-[11px] text-fog-500">{Math.round((track.confidence || 0) * 100)}%</span>
+                        <span className={`grid h-6 min-w-[30px] shrink-0 place-items-center rounded border-2 px-1 font-mono text-[11px] text-husk-100 ${view?.box || "border-gold-500"}`}>{track.track_id}</span>
+                        <span className="truncate text-sm font-semibold text-husk-50">{trackName(track)}</span>
+                        <span className="font-mono text-[11px] text-husk-500">{Math.round((track.confidence || 0) * 100)}%</span>
                         {view ? <span className={`ml-auto whitespace-nowrap rounded-full px-2 py-[2px] text-[11px] font-semibold ${view.style}`}>{view.chip}</span> : null}
                       </div>
                       {checks.length ? (
@@ -378,13 +379,13 @@ export default function CameraDetailPage() {
                           ))}
                         </div>
                       ) : (
-                        <div className="mt-1.5 text-[12.5px] text-fog-300">Not in a zone with a rule</div>
+                        <div className="mt-1.5 text-[12.5px] text-husk-300">Not in a zone with a rule</div>
                       )}
                     </div>
                   );
                 })}
               </div>
-              <p className="relative font-mono text-[11px] leading-relaxed text-fog-500">
+              <p className="relative font-mono text-[11px] leading-relaxed text-husk-500">
                 {camera?.enabled === false ? "Camera disabled — detections are from the last frame received." : `Latest frame · ${clock} · ${violations} ${violations === 1 ? "violation" : "violations"}`}
               </p>
             </section>
@@ -411,14 +412,14 @@ export default function CameraDetailPage() {
                 <h2 className="flex-1 text-[15px] font-semibold">Recent alerts</h2>
                 <Link href={`/incidents?camera_id=${params.id}`} className="link text-[13px]">All →</Link>
               </div>
-              {recent.length === 0 ? <p className="border-t border-line-soft px-4 pb-4 pt-3 text-[13px] text-graphite-500">No alerts from this camera yet.</p> : null}
+              {recent.length === 0 ? <p className="border-t border-line-soft px-4 pb-4 pt-3 text-[13px] text-bark-500">No alerts from this camera yet.</p> : null}
               {/* Two lines a row, so it fits the side column: what and how bad, then when, where and the review status. */}
               {recent.map((item) => (
-                <button key={item.id} onClick={() => openIncident(item.id)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-none border-t border-line-soft bg-transparent px-4 py-2.5 text-left font-normal text-graphite-800 hover:bg-subtle">
+                <button key={item.id} onClick={() => openIncident(item.id)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-none border-t border-line-soft bg-transparent px-4 py-2.5 text-left font-normal text-bark-800 hover:bg-gold-50">
                   <span className="truncate text-[13.5px] font-medium">{eventLabel(item.event_type)}</span>
                   <span className="justify-self-end"><SeverityTag severity={item.severity} /></span>
-                  <span className="truncate text-[12.5px] text-graphite-500">
-                    <span className="font-mono text-brand-700">{formatTime(item.started_at)}</span> · {item.zone_name || "—"}
+                  <span className="truncate text-[12.5px] text-bark-500">
+                    <span className="font-mono text-gold-700">{formatTime(item.started_at)}</span> · {item.zone_name || "—"}
                   </span>
                   <span className="justify-self-end"><StatusPill status={item.status} /></span>
                 </button>
@@ -435,10 +436,10 @@ export default function CameraDetailPage() {
           <label className="flex flex-col gap-2">
             <span className="flex items-baseline">
               <span className="flex-1 text-[13px] font-semibold">AI FPS</span>
-              <span className="font-mono text-[13px] text-brand-700">{fpsDraft ?? camera.ai_fps} / 30</span>
+              <span className="font-mono text-[13px] text-gold-700">{fpsDraft ?? camera.ai_fps} / 30</span>
             </span>
             <input type="range" min={1} max={30} value={fpsDraft ?? camera.ai_fps} onChange={(e) => changeFps(Number(e.target.value))} />
-            <span className="text-xs leading-normal text-graphite-400">Measured FPS is how fast this machine is actually running: {live?.ai_fps ?? 0} FPS now.</span>
+            <span className="text-xs leading-normal text-bark-400">Measured FPS is how fast this machine is actually running: {live?.ai_fps ?? 0} FPS now.</span>
           </label>
           {/* Enter saves as leaving the field does; Escape closes the drawer and drops the edit. */}
           <label className="flex flex-col gap-1.5">
@@ -456,7 +457,7 @@ export default function CameraDetailPage() {
             hint="For PTZ presets. Zones lock to one view; only the matching view is checked. Leave off for a fixed camera."
           />
           <label
-            className="flex cursor-pointer flex-col items-center gap-1 rounded-[10px] border-[1.5px] border-dashed border-line-strong bg-subtle p-[18px] text-center transition-colors hover:border-brand-500 hover:bg-brand-50"
+            className="flex cursor-pointer flex-col items-center gap-1 rounded-[10px] border-[1.5px] border-dashed border-[#D9C7A6] bg-cream p-[18px] text-center transition-colors hover:border-gold-600 hover:bg-[#F8F0E2]"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -465,8 +466,8 @@ export default function CameraDetailPage() {
             }}
           >
             <input type="file" accept="video/mp4,.mp4" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) uploadVideo(file); }} />
-            <span className="text-[13.5px] font-semibold text-brand-600">Upload MP4</span>
-            <span className="text-xs text-graphite-400">{upload || "Drop a file here or click to browse"}</span>
+            <span className="text-[13.5px] font-semibold text-[#7A520C]">Upload MP4</span>
+            <span className="text-xs text-bark-400">{upload || "Drop a file here or click to browse"}</span>
           </label>
         </Drawer>
       ) : null}

@@ -22,7 +22,7 @@ Server có thể đang chạy các site khác. Các bước dưới đây không
 
 - Server Ubuntu 22.04 hoặc 24.04, user có quyền `sudo`. Cho 2–4 camera chạy AI bằng CPU: khoảng 4 vCPU, 8 GB RAM, 30 GB ổ trống.
 - Domain có bản ghi A trỏ về IP server (thêm AAAA nếu server có IPv6). Kiểm tra từ máy bất kỳ: `dig +short safety-monitor.madlab.tech`.
-- Code đã push lên GitHub, branch `madison-factory-safety`.
+- Code đã push lên GitHub, branch `trung-nguyen-safety`.
 - Thư mục `models/` trên máy dev có các file `.onnx`. Chúng không nằm trong git.
 
 ## 1. Cài Docker, nginx, certbot
@@ -59,7 +59,7 @@ sudo ufw status
 mkdir -p ~/factory-safety
 cd ~/factory-safety
 ls -A   # thư mục phải trống thì mới clone vào được
-git clone -b madison-factory-safety https://github.com/thap-nv/SC-AI.git .
+git clone -b trung-nguyen-safety https://github.com/thap-nv/SC-AI.git .
 ```
 
 Dấu `.` ở cuối lệnh clone đưa code vào ngay thư mục hiện tại, không tạo thêm thư mục `SC-AI` bên trong.

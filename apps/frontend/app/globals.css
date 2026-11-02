@@ -4,23 +4,23 @@
 
 @layer base {
   body {
-    @apply bg-paper text-graphite-800 antialiased;
+    @apply bg-paper text-bark-800 antialiased;
   }
 
   ::selection {
-    @apply bg-brand-100 text-graphite-900;
+    @apply bg-gold-200 text-bark-900;
   }
 
   :focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-brand-600;
+    @apply outline outline-2 outline-offset-2 outline-gold-500;
   }
 
   input, select, textarea {
-    @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm text-graphite-800 outline-none transition-colors placeholder:text-graphite-300 focus:border-brand-600 focus:ring-2 focus:ring-brand-500/25;
+    @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm text-bark-800 outline-none transition-colors placeholder:text-bark-300 focus:border-gold-500 focus:ring-2 focus:ring-gold-100;
   }
 
   input[type="range"] {
-    @apply border-0 bg-transparent px-0 py-0 accent-brand-500 focus:ring-0;
+    @apply border-0 bg-transparent px-0 py-0 accent-gold-600 focus:ring-0;
   }
 
   button {
@@ -34,20 +34,20 @@
   }
 
   .panel-dark {
-    @apply relative overflow-hidden rounded-xl bg-ink bg-glow text-fog-100;
+    @apply relative overflow-hidden rounded-xl bg-ink text-husk-100;
   }
 
   .link {
-    @apply font-semibold text-brand-600 hover:text-brand-700;
+    @apply font-semibold text-gold-700 hover:text-gold-800;
   }
 
   .eyebrow {
-    @apply text-[11px] font-semibold uppercase tracking-[0.12em];
+    @apply font-display text-[11px] font-semibold uppercase tracking-[0.2em];
   }
 
-  /* Inputs on charcoal cards (New rule form). */
+  /* Inputs on espresso cards (New rule form). */
   .field-dark {
-    @apply border-ink-field bg-ink-raised text-fog-50 focus:border-brand-500 focus:ring-brand-500/25;
+    @apply border-ink-field bg-ink-raised text-husk-50 focus:border-gold-500 focus:ring-gold-500/20;
   }
 }
 
@@ -56,7 +56,7 @@ table {
 }
 
 th {
-  @apply border-b border-line-soft bg-muted px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-graphite-500;
+  @apply border-b border-line-soft bg-sand px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-bark-400;
 }
 
 td {
@@ -65,11 +65,11 @@ td {
 
 /* Header row that stays in view while its panel scrolls. Collapsed borders do not travel with a sticky cell, so the rule under it is a shadow. */
 thead.sticky-head th {
-  @apply sticky top-0 z-[1] border-b-0 shadow-[inset_0_-1px_0_#EDF1F6];
+  @apply sticky top-0 z-[1] border-b-0 shadow-[inset_0_-1px_0_#F0E8DB];
 }
 
 tbody tr {
-  @apply transition-colors hover:bg-subtle;
+  @apply transition-colors hover:bg-gold-50;
 }
 
 tbody tr:last-child td {

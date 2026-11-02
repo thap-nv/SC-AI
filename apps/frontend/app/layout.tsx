@@ -1,29 +1,31 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import { Be_Vietnam_Pro, Cinzel, JetBrains_Mono } from "next/font/google";
 import Providers from "@/components/providers";
 
-// Plus Jakarta Sans is the only face on madison-technologies.com, for body text and headings alike.
-// It carries every user-entered name (full Vietnamese subset). JetBrains Mono sets times, codes and measurements.
-const sans = Plus_Jakarta_Sans({ subsets: ["latin", "vietnamese"], weight: ["400", "500", "600", "700"], variable: "--font-sans", display: "swap" });
+// Be Vietnam Pro carries the UI and every user-entered name (full Vietnamese subset).
+// Cinzel stands in for the brand's Trajan Pro 3, but has no Vietnamese glyphs: see displayFont() in lib/labels.ts.
+// JetBrains Mono sets times, codes and measurements.
+const sans = Be_Vietnam_Pro({ subsets: ["latin", "vietnamese"], weight: ["400", "500", "600", "700"], variable: "--font-sans", display: "swap" });
+const display = Cinzel({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-display", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "AI Safety & Compliance Monitoring · Madison Technologies",
+  title: "AI Safety & Compliance Monitoring · Trung Nguyên Legend",
   description: "Factory safety monitoring proof of concept",
 };
 
-// cover lets the phone tab bar pad itself past the home indicator; the theme colour matches the navy top bar.
+// cover lets the phone tab bar pad itself past the home indicator; the theme colour matches the espresso top bar.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0A1525",
+  themeColor: "#17110C",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${display.variable} ${mono.variable}`}>
       <body className="font-sans">
         <Providers>{children}</Providers>
       </body>

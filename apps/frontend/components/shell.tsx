@@ -4,12 +4,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/providers";
-import { GhostButton, LiveDot, Logo, Mark, Marker, Rule } from "@/components/ui";
+import { Emblem, GhostButton, LiveDot, Rule } from "@/components/ui";
 import { API_URL, api, clearSession, getToken, getUser, Incident, User } from "@/lib/api";
 import { emitIncident, useIncidentEvents } from "@/lib/live";
-import { eventLabel, formatDate, formatTime } from "@/lib/labels";
+import { displayFont, eventLabel, formatDate, formatTime } from "@/lib/labels";
 
-// 24 × 24 line icons, stroked with currentColor.
+// 24 × 24 line icons for the phone tab bar, stroked with currentColor. The sidebar numbers its sections instead.
 const ICONS: Record<string, React.ReactNode> = {
   overview: (
     <>
@@ -43,11 +43,11 @@ const ICONS: Record<string, React.ReactNode> = {
 };
 
 const LINKS = [
-  { href: "/", label: "Overview", icon: "overview" },
-  { href: "/cameras", label: "Cameras", icon: "cameras" },
-  { href: "/rules", label: "Rules", icon: "rules" },
-  { href: "/incidents", label: "Incidents", icon: "incidents" },
-  { href: "/evaluation", label: "Evaluation", icon: "evaluation" },
+  { href: "/", label: "Overview", num: "I", icon: "overview" },
+  { href: "/cameras", label: "Cameras", num: "II", icon: "cameras" },
+  { href: "/rules", label: "Rules", num: "III", icon: "rules" },
+  { href: "/incidents", label: "Incidents", num: "IV", icon: "incidents" },
+  { href: "/evaluation", label: "Evaluation", num: "V", icon: "evaluation" },
 ];
 
 function initials(name: string) {
@@ -144,8 +144,8 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
   if (!user) {
     return (
       <div className="grid min-h-screen place-items-center">
-        <div className="flex flex-col items-center gap-3 text-sm text-graphite-500">
-          <Logo light className="text-[16px] motion-safe:animate-pulse" />
+        <div className="flex flex-col items-center gap-3 text-sm text-bark-500">
+          <Emblem className="h-12 w-12 text-gold-500 motion-safe:animate-pulse" />
           Loading…
         </div>
       </div>
@@ -164,28 +164,28 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
 
   return (
     <div className={`min-h-screen md:flex ${fill ? "md:h-screen" : ""}`}>
-      {/* Phone: one slim navy bar with the mark, AI Mode and the account menu; the sections move to the tab bar at the bottom. */}
-      <header className="sticky top-0 z-10 flex h-14 items-center gap-2.5 bg-ink px-4 text-fog-100 md:hidden">
+      {/* Phone: one slim espresso bar with the emblem, AI Mode and the account menu; the sections move to the tab bar at the bottom. */}
+      <header className="sticky top-0 z-10 flex h-14 items-center gap-2.5 bg-ink px-4 text-husk-100 md:hidden">
         <Link href="/" className="flex min-w-0 items-center gap-2.5">
-          <Mark className="h-7" />
-          <span className="truncate font-display text-[14.5px] font-semibold text-white min-[380px]:text-[15px]">Safety Monitor</span>
+          <Emblem className="h-8 w-8 shrink-0 text-gold-500" />
+          <span className="truncate text-[14.5px] font-semibold text-husk-50 min-[380px]:text-[15px]">Safety Monitor</span>
         </Link>
         <div className="flex-1" />
-        <span title={modeDetail} className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-bold min-[380px]:px-2.5 min-[380px]:text-[11.5px] ${demo ? "border-amber-400/40 bg-amber-400/10 text-amber-300" : "border-success-600/40 bg-success-600/15 text-success-200"}`}>
+        <span title={modeDetail} className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-bold min-[380px]:px-2.5 min-[380px]:text-[11.5px] ${demo ? "border-amber-400/40 bg-amber-400/10 text-amber-300" : "border-leaf-600/40 bg-leaf-600/15 text-leaf-200"}`}>
           <LiveDot demo={demo} />
           AI Mode: {mode}
           <span className="sr-only">. {modeDetail}</span>
         </span>
         <div className="relative shrink-0">
-          <button onClick={() => setMenu((open) => !open)} aria-expanded={menu} aria-haspopup="menu" aria-label={`Account: ${user.full_name}`} className="grid h-9 w-9 place-items-center rounded-full bg-brand-500/15 p-0 text-xs font-bold text-brand-300">
+          <button onClick={() => setMenu((open) => !open)} aria-expanded={menu} aria-haspopup="menu" aria-label={`Account: ${user.full_name}`} className="grid h-9 w-9 place-items-center rounded-full border border-gold-500 bg-transparent p-0 text-xs font-semibold text-gold-300">
             {initials(user.full_name)}
           </button>
           {menu ? (
             <>
               <div className="fixed inset-0 z-[11]" onClick={() => setMenu(false)} aria-hidden="true" />
-              <div role="menu" className="absolute right-0 top-full z-[12] mt-2 w-60 rounded-xl border border-line bg-surface p-4 text-graphite-800 shadow-[0_14px_40px_rgba(10,21,37,.25)]">
-                <div className="truncate text-sm font-semibold text-graphite-900">{user.full_name}</div>
-                <div className="text-xs capitalize text-graphite-500">{role}</div>
+              <div role="menu" className="absolute right-0 top-full z-[12] mt-2 w-60 rounded-xl border border-line border-t-2 border-t-gold-500 bg-surface p-4 text-bark-800 shadow-[0_14px_40px_rgba(23,17,12,.25)]">
+                <div className="truncate text-sm font-semibold text-bark-900">{user.full_name}</div>
+                <div className="text-xs capitalize text-bark-500">{role}</div>
                 <GhostButton role="menuitem" onClick={signOut} className="mt-3.5 w-full">Sign out</GhostButton>
               </div>
             </>
@@ -193,17 +193,16 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
         </div>
       </header>
 
-      {/* Navy like the site's navigation bar, which is where the cyan logo and gradient wordmark are meant to sit. */}
-      <aside className="sticky top-0 hidden h-screen w-[256px] flex-none flex-col overflow-hidden bg-ink bg-glow text-fog-100 md:flex">
-        <div className="flex flex-col gap-4 px-[22px] pb-5 pt-6">
-          <Logo className="text-[14px]" />
-          <div className="flex items-center gap-2 font-display text-[14.5px] font-semibold text-white">
-            <Marker />
-            Safety Monitor
+      <aside className="sticky top-0 hidden h-screen w-[264px] flex-none flex-col overflow-hidden bg-ink text-husk-100 md:flex">
+        <div className="flex items-center gap-3.5 px-[22px] pb-[22px] pt-[26px]">
+          <Emblem className="h-[46px] w-[46px] shrink-0 text-gold-500" />
+          <div className="flex min-w-0 flex-col gap-[3px]">
+            <div className="whitespace-nowrap font-display text-[10.5px] tracking-[0.18em] text-gold-500">TRUNG NGUYÊN LEGEND</div>
+            <div className="text-[17px] font-semibold tracking-[-0.01em] text-husk-50">Safety Monitor</div>
           </div>
         </div>
-        <div className="mx-[22px] h-px bg-white/10" />
-        <div className="eyebrow px-[22px] pb-2 pt-5 text-fog-500">Factory & workshop</div>
+        <div className="mx-[22px] h-px bg-gradient-to-r from-gold-500/60 to-transparent" />
+        <div className="px-[22px] pb-2 pt-[22px] font-display text-[10px] tracking-[0.22em] text-husk-500">COFFEE FACTORY</div>
         <nav className="flex flex-col gap-0.5 overflow-auto px-3">
           {LINKS.map((link) => {
             const active = isActive(link.href);
@@ -213,26 +212,25 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
                 key={link.href}
                 href={link.href}
                 aria-current={active ? "page" : undefined}
-                className={`relative flex items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2.5 transition-colors ${active ? "bg-white/[0.07] text-brand-300" : "text-fog-300 hover:bg-white/[0.05] hover:text-white"}`}
+                className={`flex items-center gap-3.5 whitespace-nowrap rounded-lg px-3 py-[11px] transition-colors hover:bg-gold-500/10 hover:text-husk-50 ${active ? "bg-gold-500/15 text-gold-200" : "text-husk-300"}`}
               >
-                {active ? <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-brand-500" aria-hidden="true" /> : null}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
-                  {ICONS[link.icon]}
-                </svg>
-                <span className={`flex-1 text-[14.5px] ${active ? "font-semibold" : "font-medium"}`}>{link.label}</span>
-                {badge ? <span className="min-w-6 rounded-full bg-brand-500 px-[7px] py-0.5 text-center text-[11px] font-bold text-ink" aria-label={`${badge} new`}>{badge > 99 ? "99+" : badge}</span> : null}
+                <span className={`w-6 font-display text-xs font-semibold ${active ? "text-gold-300" : "text-husk-700"}`}>{link.num}</span>
+                <span className="flex-1 text-[14.5px] font-medium">{link.label}</span>
+                {badge ? <span className="min-w-6 rounded-full bg-crimson-600 px-[7px] py-0.5 text-center text-[11px] font-bold text-[#FFF3EE]" aria-label={`${badge} new`}>{badge > 99 ? "99+" : badge}</span> : null}
               </Link>
             );
           })}
         </nav>
-        <div className="flex-1" />
-        <div className="flex items-center gap-3 border-t border-white/10 px-[22px] py-4">
-          <div className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-brand-500/15 text-xs font-bold text-brand-300">{initials(user.full_name)}</div>
+        <div className="relative flex-1" aria-hidden="true">
+          <Emblem className="pointer-events-none absolute -bottom-36 -left-28 h-[400px] w-[400px] text-gold-500/[0.16]" />
+        </div>
+        <div className="relative flex items-center gap-3 border-t border-gold-500/15 bg-ink px-[22px] py-4">
+          <div className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full border border-gold-500 text-xs font-semibold text-gold-300">{initials(user.full_name)}</div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-semibold text-white" title={user.full_name}>{user.full_name}</div>
-            <div className="text-xs capitalize text-fog-500">{role}</div>
+            <div className="truncate text-[13.5px] font-semibold text-husk-50" title={user.full_name}>{user.full_name}</div>
+            <div className="text-xs capitalize text-husk-500">{role}</div>
           </div>
-          <button onClick={signOut} className="whitespace-nowrap rounded-md border border-white/15 bg-transparent px-2.5 py-1.5 text-xs text-fog-100 hover:border-brand-500 hover:text-brand-300">
+          <button onClick={signOut} className="whitespace-nowrap rounded-md border border-gold-500/35 bg-transparent px-2.5 py-1.5 text-xs text-gold-400 hover:bg-gold-500/10">
             Sign out
           </button>
         </div>
@@ -241,10 +239,10 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
       {/* On a phone the bottom padding keeps the last card clear of the tab bar. */}
       <main className={`flex min-w-0 flex-1 flex-col pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0 ${fill ? "md:overflow-y-auto" : ""}`}>
         {/* Always 56px tall: the camera view sizes itself to the screen height left under it. The mode text truncates rather than wrap. */}
-        <header className="sticky top-0 z-[5] hidden h-14 shrink-0 items-center gap-4 border-b border-line bg-surface/90 px-9 backdrop-blur md:flex">
-          <div title={modeDetail} className={`flex min-w-0 items-center gap-2.5 rounded-full border py-1.5 pl-2.5 pr-3 ${demo ? "border-amber-200 bg-amber-50" : "border-success-200 bg-success-50"}`}>
+        <header className="sticky top-0 z-[5] hidden h-14 shrink-0 items-center gap-4 border-b border-line bg-cream/90 px-9 backdrop-blur md:flex">
+          <div title={modeDetail} className={`flex min-w-0 items-center gap-2.5 rounded-full border py-1.5 pl-2.5 pr-3 ${demo ? "border-amber-200 bg-amber-50" : "border-leaf-200 bg-leaf-50"}`}>
             <LiveDot demo={demo} />
-            <span className={`truncate text-[13px] ${demo ? "text-amber-950" : "text-success-900"}`}>
+            <span className={`truncate text-[13px] ${demo ? "text-amber-950" : "text-leaf-900"}`}>
               <strong className="font-bold">AI Mode: {mode}</strong>
               {demo ? " — demonstration labels, not a trained factory model" : " — running the configured detector"}
               {connected ? "" : " · worker still connecting"}
@@ -252,10 +250,10 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
           </div>
           <div className="flex-1" />
           {now ? (
-            <div className="flex shrink-0 items-center gap-2 font-mono text-[12.5px] text-graphite-500" aria-label="Factory time">
+            <div className="flex shrink-0 items-center gap-2 font-mono text-[12.5px] text-bark-500" aria-label="Factory time">
               <span className="hidden lg:inline">{formatDate(now)}</span>
-              <span className="hidden h-1 w-1 rounded-full bg-brand-500 lg:inline-block" aria-hidden="true" />
-              <span className="font-medium text-graphite-800">{formatTime(now)}</span>
+              <span className="hidden text-gold-500 lg:inline" aria-hidden="true">◆</span>
+              <span className="font-medium text-bark-800">{formatTime(now)}</span>
               <span>ICT</span>
             </div>
           ) : null}
@@ -269,13 +267,13 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
                 {back ? (
                   <>
                     <Link href={back.href} className="link text-[12.5px]">← {back.label}</Link>
-                    <span className="hidden text-graphite-300 md:inline">/</span>
+                    <span className="hidden text-[#D9C7A6] md:inline">/</span>
                   </>
                 ) : null}
-                <div className="eyebrow hidden text-brand-600 md:block">Factory · Safety</div>
+                <div className="hidden font-display text-[11.5px] tracking-[0.24em] text-[#9A7333] md:block">COFFEE FACTORY · SAFETY</div>
               </div>
-              <h1 className={`m-0 font-display text-[26px] font-bold leading-tight tracking-[-0.01em] text-graphite-900 ${dense ? "" : "md:text-[32px]"}`}>{title}</h1>
-              {subtitle ? <div>{subtitle}</div> : dense ? null : <p className="hidden text-[14.5px] text-graphite-500 md:block">AI raises an alert. A person decides what it means.</p>}
+              <h1 className={`m-0 text-[26px] font-semibold leading-tight tracking-[0.02em] text-bark-900 ${displayFont(title)} ${dense ? "" : "md:text-[34px]"}`}>{title}</h1>
+              {subtitle ? <div>{subtitle}</div> : dense ? null : <p className="hidden text-[14.5px] text-bark-500 md:block">AI raises an alert. A person decides what it means.</p>}
             </div>
             {actions ? <div className="flex w-full gap-2.5 sm:w-auto sm:flex-wrap [&>*]:flex-auto [&>*]:whitespace-nowrap sm:[&>*]:flex-none">{actions}</div> : null}
           </div>
@@ -285,7 +283,7 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
       </main>
 
       {/* Phone tab bar: the five sections within thumb reach, with the count of new incidents. */}
-      <nav aria-label="Sections" className="fixed inset-x-0 bottom-0 z-10 flex border-t border-white/10 bg-ink pb-[env(safe-area-inset-bottom)] md:hidden">
+      <nav aria-label="Sections" className="fixed inset-x-0 bottom-0 z-10 flex border-t border-gold-500/15 bg-ink pb-[env(safe-area-inset-bottom)] md:hidden">
         {LINKS.map((link) => {
           const active = isActive(link.href);
           const badge = badgeFor(link.href);
@@ -294,14 +292,14 @@ export default function Shell({ title, children, actions, back, subtitle, dense 
               key={link.href}
               href={link.href}
               aria-current={active ? "page" : undefined}
-              className={`relative flex min-w-0 flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[10.5px] ${active ? "font-semibold text-brand-300" : "font-medium text-fog-300"}`}
+              className={`relative flex min-w-0 flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[10.5px] ${active ? "font-semibold text-gold-200" : "font-medium text-husk-300"}`}
             >
-              {active ? <span className="absolute inset-x-[24%] top-0 h-[3px] rounded-b-full bg-brand-500" aria-hidden="true" /> : null}
+              {active ? <span className="absolute inset-x-[24%] top-0 h-[3px] rounded-b-full bg-gold-500" aria-hidden="true" /> : null}
               <span className="relative">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-[22px] w-[22px]" aria-hidden="true">
                   {ICONS[link.icon]}
                 </svg>
-                {badge ? <span className="absolute -right-3.5 -top-1.5 min-w-[18px] rounded-full bg-brand-500 px-1 text-center text-[10px] font-bold leading-4 text-ink" aria-label={`${badge} new`}>{badge > 99 ? "99+" : badge}</span> : null}
+                {badge ? <span className="absolute -right-3.5 -top-1.5 min-w-[18px] rounded-full bg-crimson-600 px-1 text-center text-[10px] font-bold leading-4 text-[#FFF3EE]" aria-label={`${badge} new`}>{badge > 99 ? "99+" : badge}</span> : null}
               </span>
               <span className="max-w-full truncate">{link.label}</span>
             </Link>

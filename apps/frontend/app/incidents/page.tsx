@@ -30,12 +30,12 @@ const STATUS_TABS = [
 ];
 
 function confidenceColor(value: number) {
-  if (value >= 0.8) return "bg-success-600";
-  if (value >= 0.6) return "bg-warn-500";
-  return "bg-danger-500";
+  if (value >= 0.8) return "bg-leaf-600";
+  if (value >= 0.6) return "bg-gold-500";
+  return "bg-[#B5564A]";
 }
 
-// A critical alert nobody has looked at yet gets a red row.
+// A critical alert nobody has looked at yet gets a crimson row.
 function urgent(item: Incident) {
   return item.status === "NEW" && item.severity === "CRITICAL";
 }
@@ -112,7 +112,7 @@ export default function IncidentsPage() {
         <div className="w-full md:w-auto">
           <Segmented label="Status" options={STATUS_TABS} value={filters.status} onChange={(value) => update("status", value)} />
         </div>
-        <button type="button" onClick={() => setShowFilters((open) => !open)} aria-expanded={showFilters} aria-controls="incident-filters" className="border border-line-strong bg-surface text-[13px] font-semibold text-graphite-800 md:hidden">
+        <button type="button" onClick={() => setShowFilters((open) => !open)} aria-expanded={showFilters} aria-controls="incident-filters" className="border border-line-strong bg-surface text-[13px] font-semibold text-bark-800 md:hidden">
           Filters{folded ? ` · ${folded}` : ""} <span aria-hidden="true">{showFilters ? "▴" : "▾"}</span>
         </button>
         <div id="incident-filters" className={`order-last w-full gap-2.5 md:order-none md:contents ${showFilters ? "grid grid-cols-2" : "hidden"}`}>
@@ -135,28 +135,28 @@ export default function IncidentsPage() {
         </div>
         {filtered ? <button type="button" onClick={() => apply(EMPTY)} className="link bg-transparent px-1.5 text-[13px]">Clear</button> : null}
         {/* Wide screen: the count sits in the bar under the table. */}
-        <span className="ml-auto whitespace-nowrap text-[13px] text-graphite-500 md:hidden"><strong className="text-graphite-800">{total}</strong> incidents</span>
+        <span className="ml-auto whitespace-nowrap text-[13px] text-bark-500 md:hidden"><strong className="text-bark-800">{total}</strong> incidents</span>
       </div>
       {error ? <ErrorText>{error}</ErrorText> : null}
       {/* Phone: one card per incident, with what a reviewer scans for first; the table needs a wide screen. */}
       <div className="panel divide-y divide-line-soft overflow-hidden md:hidden">
-        {items.length === 0 ? <p className="px-4 py-6 text-sm text-graphite-500">No incidents match these filters.</p> : null}
+        {items.length === 0 ? <p className="px-4 py-6 text-sm text-bark-500">No incidents match these filters.</p> : null}
         {items.map((item) => (
-          <button key={item.id} onClick={() => openIncident(item.id)} className={`flex w-full items-start gap-3 rounded-none px-4 py-3 text-left font-normal text-graphite-800 ${urgent(item) ? "bg-danger-50" : "bg-transparent hover:bg-subtle"}`}>
+          <button key={item.id} onClick={() => openIncident(item.id)} className={`flex w-full items-start gap-3 rounded-none px-4 py-3 text-left font-normal text-bark-800 ${urgent(item) ? "bg-crimson-50" : "bg-transparent hover:bg-gold-50"}`}>
             <span className="flex w-[62px] shrink-0 flex-col pt-px">
-              <span className="font-mono text-[12.5px] text-brand-700">{formatTime(item.started_at)}</span>
-              <span className="text-[11px] text-graphite-400">{formatDay(item.started_at)}</span>
+              <span className="font-mono text-[12.5px] text-gold-700">{formatTime(item.started_at)}</span>
+              <span className="text-[11px] text-bark-400">{formatDay(item.started_at)}</span>
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="text-sm font-semibold">{eventLabel(item.event_type)}</span>
-              <span className="truncate text-[12.5px] text-graphite-500">{item.camera_name}{item.zone_name ? ` · ${item.zone_name}` : ""}</span>
+              <span className="truncate text-[12.5px] text-bark-500">{item.camera_name}{item.zone_name ? ` · ${item.zone_name}` : ""}</span>
               <span className="mt-0.5 flex flex-wrap items-center gap-2">
                 <SeverityTag severity={item.severity} />
                 <StatusPill status={item.status} />
-                {item.confidence === null ? null : <span className="font-mono text-[11.5px] text-graphite-500">AI {Math.round(item.confidence * 100)}%</span>}
+                {item.confidence === null ? null : <span className="font-mono text-[11.5px] text-bark-500">AI {Math.round(item.confidence * 100)}%</span>}
               </span>
             </span>
-            <span className="self-center text-base text-graphite-300" aria-hidden="true">›</span>
+            <span className="self-center text-base text-gold-600" aria-hidden="true">›</span>
           </button>
         ))}
       </div>
@@ -171,23 +171,23 @@ export default function IncidentsPage() {
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={8} className="py-7 text-sm text-graphite-500">No incidents match these filters.</td></tr>
+                  <tr><td colSpan={8} className="py-7 text-sm text-bark-500">No incidents match these filters.</td></tr>
                 ) : null}
                 {items.map((item) => (
-                  <tr key={item.id} onClick={() => openIncident(item.id)} className={`cursor-pointer ${urgent(item) ? "bg-danger-50" : ""}`}>
+                  <tr key={item.id} onClick={() => openIncident(item.id)} className={`cursor-pointer ${urgent(item) ? "bg-crimson-50" : ""}`}>
                     <td className="py-2.5">
                       <button className="flex items-baseline gap-2 rounded-none bg-transparent p-0 text-left" onClick={(e) => { e.stopPropagation(); openIncident(item.id); }}>
-                        <span className="font-mono text-[12.5px] text-brand-700">{formatTime(item.started_at)}</span>
-                        {formatDay(item.started_at) === today ? null : <span className="text-[11.5px] font-normal text-graphite-400">{formatDay(item.started_at)}</span>}
+                        <span className="font-mono text-[12.5px] text-gold-700">{formatTime(item.started_at)}</span>
+                        {formatDay(item.started_at) === today ? null : <span className="text-[11.5px] font-normal text-bark-400">{formatDay(item.started_at)}</span>}
                       </button>
                     </td>
                     <td className="py-2.5 text-[13.5px]">{item.camera_name}</td>
-                    <td className="py-2.5 text-[13.5px] text-graphite-600">{item.zone_name || "—"}</td>
+                    <td className="py-2.5 text-[13.5px] text-bark-600">{item.zone_name || "—"}</td>
                     <td className="py-2.5 text-[13.5px] font-medium">{eventLabel(item.event_type)}</td>
                     <td className="py-2.5"><SeverityTag severity={item.severity} /></td>
                     <td className="py-2.5">
                       {item.confidence === null ? (
-                        <span className="text-graphite-400">—</span>
+                        <span className="text-bark-400">—</span>
                       ) : (
                         <span className="flex items-center gap-2">
                           <span className="h-[5px] w-14 overflow-hidden rounded-[3px] bg-line-muted 2xl:w-24">
@@ -198,21 +198,21 @@ export default function IncidentsPage() {
                       )}
                     </td>
                     <td className="py-2.5"><StatusPill status={item.status} /></td>
-                    <td className="py-2.5 text-base text-graphite-300" aria-hidden="true">›</td>
+                    <td className="py-2.5 text-base text-gold-600" aria-hidden="true">›</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="flex shrink-0 items-center gap-3 border-t border-line-soft bg-subtle px-4 py-2 text-[13px] text-graphite-500">
-            <span>{items.length < total ? `Showing ${items.length} of ` : ""}<strong className="text-graphite-800">{total}</strong> incidents</span>
+          <div className="flex shrink-0 items-center gap-3 border-t border-line-soft bg-cream px-4 py-2 text-[13px] text-bark-500">
+            <span>{items.length < total ? `Showing ${items.length} of ` : ""}<strong className="text-bark-800">{total}</strong> incidents</span>
             <div className="flex-1" />
             {more}
           </div>
         </div>
       </div>
       {items.length < total ? (
-        <div className="-mt-1.5 flex items-center justify-center gap-3 text-[13px] text-graphite-500 md:hidden">
+        <div className="-mt-1.5 flex items-center justify-center gap-3 text-[13px] text-bark-500 md:hidden">
           Showing {items.length} of {total}
           {more}
         </div>

@@ -103,12 +103,12 @@ export default function RulesPage() {
     }
   }
 
-  const label = "flex flex-col gap-1.5 text-[12.5px] text-fog-300";
+  const label = "flex flex-col gap-1.5 text-[12.5px] text-husk-300";
   const toggle = (rule: Rule) =>
-    admin ? <Switch size="sm" checked={rule.enabled} onChange={(next) => setEnabled(rule, next)} label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`} /> : <span className="text-xs text-graphite-500">{rule.enabled ? "On" : "Off"}</span>;
+    admin ? <Switch size="sm" checked={rule.enabled} onChange={(next) => setEnabled(rule, next)} label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`} /> : <span className="text-xs text-bark-500">{rule.enabled ? "On" : "Off"}</span>;
   const edit = (rule: Rule) =>
     admin ? (
-      <button type="button" onClick={() => startEdit(rule)} aria-label={`Edit ${rule.name}`} className="rounded px-2 py-1 text-xs font-semibold text-brand-600 hover:bg-brand-50">
+      <button type="button" onClick={() => startEdit(rule)} aria-label={`Edit ${rule.name}`} className="rounded px-2 py-1 text-xs font-semibold text-gold-700 hover:bg-gold-100">
         Edit
       </button>
     ) : null;
@@ -120,9 +120,10 @@ export default function RulesPage() {
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
         {admin ? (
           <form ref={form} onSubmit={save} className="panel-dark order-last flex scroll-mt-4 flex-col gap-3.5 p-[22px] xl:order-none xl:w-[300px] xl:shrink-0">
-            <h2 className="relative font-display text-lg font-bold text-white">{editing ? "Edit rule" : "New rule"}</h2>
+            <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-rays-soft" aria-hidden="true" />
+            <h2 className="relative font-display text-lg font-semibold text-gold-200">{editing ? "Edit rule" : "New rule"}</h2>
             {editing ? (
-              <p className="text-[12.5px] text-fog-300">{editing.camera_name} · {editing.zone_name} · {eventLabel(editing.event_type)}</p>
+              <p className="text-[12.5px] text-husk-300">{editing.camera_name} · {editing.zone_name} · {eventLabel(editing.event_type)}</p>
             ) : (
               <label className={label}>Template
                 <select className="field-dark" value={template} onChange={(e) => { setTemplate(e.target.value); setName(e.target.value); const next = TEMPLATES.find((item) => item.label === e.target.value); if (next) setSeconds(next.min_duration_s); }}>
@@ -142,7 +143,7 @@ export default function RulesPage() {
               <label className={label}>{condition === "HANDWASH_STEPS_MISSING" ? "Min per step (s)" : "Min duration (s)"}<input className="field-dark" type="number" min={0} step={0.1} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} /></label>
               <label className={label}>Cooldown (s)<input className="field-dark" type="number" min={0} step={1} value={cooldown} onChange={(e) => setCooldown(Number(e.target.value))} /></label>
             </div>
-            <p className="text-xs leading-normal text-fog-500">
+            <p className="text-xs leading-normal text-husk-500">
               {CONDITION_LABELS[condition]}.{" "}
               {condition === "PERSON_INSIDE"
                 ? "Opens when a person's feet stay inside the zone for the minimum duration. Someone riding a vehicle, such as a forklift driver, is not counted."
@@ -153,15 +154,15 @@ export default function RulesPage() {
                     : "Only a clear “missing” result raises an alert. Unknown, such as a turned-away face or hidden feet, does not."}
             </p>
             {/* What the worker does with cooldown_ms: per person live, per rule on an uploaded video playing over (CameraLoop._quiet_until). */}
-            <p className="text-xs leading-normal text-fog-500">
+            <p className="text-xs leading-normal text-husk-500">
               {condition === "HANDWASH_STEPS_MISSING"
                 ? "Cooldown: every wrong wash is reported. On an uploaded video playing over, at most one per cooldown, counted from the end of the last one reported."
                 : "Cooldown: the same person or vehicle is not alerted again for this long after leaving. On an uploaded video playing over, the rule alerts at most once per cooldown."}{" "}
               0 turns the limit off.
             </p>
-            <button type="submit" className="bg-brand-500 py-3 font-bold text-ink hover:bg-brand-300">{editing ? "Save changes" : "Save rule"}</button>
+            <button type="submit" className="bg-gold-bar py-3 font-bold text-bark-900 hover:brightness-[1.07]">{editing ? "Save changes" : "Save rule"}</button>
             {editing ? (
-              <button type="button" onClick={stopEdit} className="py-1 text-sm font-semibold text-fog-300 hover:text-white">Cancel</button>
+              <button type="button" onClick={stopEdit} className="py-1 text-sm font-semibold text-husk-300 hover:text-husk-50">Cancel</button>
             ) : null}
           </form>
         ) : null}
@@ -171,11 +172,11 @@ export default function RulesPage() {
             <li key={rule.id} className={`flex items-start gap-3 px-4 py-3.5 ${rule.enabled ? "" : "opacity-45"}`}>
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="text-sm font-semibold">{rule.name}</div>
-                <div className="text-[12.5px] text-graphite-500">{rule.camera_name} · {rule.zone_name}</div>
-                <div className="text-[12.5px] text-graphite-600">{eventLabel(rule.event_type)}</div>
+                <div className="text-[12.5px] text-bark-500">{rule.camera_name} · {rule.zone_name}</div>
+                <div className="text-[12.5px] text-bark-600">{eventLabel(rule.event_type)}</div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-2">
                   <SeverityTag severity={rule.severity} />
-                  <span className="font-mono text-[11.5px] text-graphite-600">{rule.min_duration_ms / 1000}s · cd {rule.cooldown_ms / 1000}s</span>
+                  <span className="font-mono text-[11.5px] text-bark-600">{rule.min_duration_ms / 1000}s · cd {rule.cooldown_ms / 1000}s</span>
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -184,7 +185,7 @@ export default function RulesPage() {
               </div>
             </li>
           ))}
-          {rules.length === 0 ? <li className="px-4 py-6 text-sm text-graphite-500">No rules yet.</li> : null}
+          {rules.length === 0 ? <li className="px-4 py-6 text-sm text-bark-500">No rules yet.</li> : null}
         </ul>
         <div className="panel hidden min-w-0 overflow-auto md:block xl:flex-1">
           <table className="min-w-[760px]">
@@ -194,11 +195,11 @@ export default function RulesPage() {
                 <tr key={rule.id} className={rule.enabled ? "" : "opacity-45"}>
                   <td>
                     <div className="text-sm font-semibold">{rule.name}</div>
-                    <div className="text-xs text-graphite-400">{rule.camera_name}</div>
+                    <div className="text-xs text-bark-400">{rule.camera_name}</div>
                   </td>
                   <td className="text-[13.5px]">{rule.zone_name}</td>
                   <td className="text-[13.5px]">{eventLabel(rule.event_type)}</td>
-                  <td className="whitespace-nowrap font-mono text-xs text-graphite-600">{rule.min_duration_ms / 1000}s · cd {rule.cooldown_ms / 1000}s</td>
+                  <td className="whitespace-nowrap font-mono text-xs text-bark-600">{rule.min_duration_ms / 1000}s · cd {rule.cooldown_ms / 1000}s</td>
                   <td><SeverityTag severity={rule.severity} /></td>
                   <td>
                     <div className="flex items-center justify-end gap-1.5">
